@@ -5,8 +5,11 @@ PUBSUB_MAX_PAYLOAD_BYTES = 10 * 1024 * 1024
 # Default thread pool size for asynchronous HTTP workers
 DEFAULT_HTTP_MAX_WORKERS = 100
 
-# Timeout for fire-and-forget logic (ensures the task is picked up by the executor)
+# Timeout for fire-and-forget logic (ensures the task is picked up by the executor) in seconds
 DEFAULT_HTTP_FUTURE_TIMEOUT_SEC = 0.005
+
+# Timeout executor's wait time to wait for http response in seconds
+DEFAULT_HTTP_REQUEST_TIMEOUT_SEC = 300
 
 # --- Dynamic Thresholds (Cutoff for switching strategy) ---
 # Our research cutoff for "small" vs "large" messages (1MB), may change later with modelling
