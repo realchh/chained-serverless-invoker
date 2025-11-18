@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "chained-serverless-invoker"
+version = "0.1.0"
+description = ""
+authors = ["Naufal <naufal.rayhanwibawa@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+google-cloud-pubsub = "^2.33.0"
+requests = "^2.32.5"
+google-auth = "^2.43.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
