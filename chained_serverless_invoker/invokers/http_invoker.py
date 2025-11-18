@@ -1,12 +1,11 @@
-import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Any, Optional
 
 import requests
 
-from .invoker import AbstractInvoker
-from .constants import DEFAULT_HTTP_FUTURE_TIMEOUT_SEC, DEFAULT_HTTP_MAX_WORKERS
+from chained_serverless_invoker.invokers.invoker import AbstractInvoker
+from chained_serverless_invoker.constants import DEFAULT_HTTP_FUTURE_TIMEOUT_SEC, DEFAULT_HTTP_MAX_WORKERS
 
 
 # Shared thread pool for all HTTP invocations (Class-level singleton pattern)

@@ -1,6 +1,6 @@
 from google.cloud import pubsub_v1
 
-from .invoker import AbstractInvoker
+from chained_serverless_invoker.invokers.invoker import AbstractInvoker
 
 
 class PubSubInvoker(AbstractInvoker):

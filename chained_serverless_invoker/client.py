@@ -2,21 +2,15 @@ import json
 from enum import Enum, auto
 from typing import Callable, Any
 
-from .constants import (
-    PUBSUB_MAX_PAYLOAD_BYTES,
-    DEFAULT_HTTP_CUTOFF_BYTES
-)
-from .invoker import AbstractInvoker
-from .http_invoker import HttpInvoker
-from .pubsub_invoker import PubSubInvoker
+from .invokers import AbstractInvoker, HttpInvoker, PubSubInvoker
 from .config import InvokerConfig
 
 
 class InvocationMode(Enum):
     """Defines the reliability mode chosen by the user."""
     DYNAMIC = auto()
-    FORCE_HTTP = auto()  # Fast/Cheap, At-Most-Once
-    FORCE_PUBSUB = auto()  # Slower/Costly, At-Least-Once (reliable)
+    FORCE_HTTP = auto()  # At-Most-Once
+    FORCE_PUBSUB = auto()  # At-Least-Once (reliable)
 
 
 class DynamicInvoker:
@@ -24,7 +18,6 @@ class DynamicInvoker:
     Context class for the Strategy Pattern. Decides which invoker to use
     based on payload size, reliability preference, and current configuration.
     """
-
     def __init__(self,
                  pubsub_client: Any,
                  token_fetcher: Callable[[str], str],
@@ -44,8 +37,6 @@ class DynamicInvoker:
         json_payload = json.dumps(payload)
         payload_bytes = len(json_payload.encode('utf-8'))
 
-        # --- Decision Logic (The Switch) ---
-
         # 1. Handle Hard Limits (Pub/Sub Max Size)
         if payload_bytes > self.config.pubsub_max_bytes:
             if mode == InvocationMode.FORCE_PUBSUB:
@@ -57,7 +48,6 @@ class DynamicInvoker:
             # print(f"Payload > {self.config.pubsub_max_bytes}, forcing HTTP.")
             return self.http_invoker.invoke(target_identifier, json_payload)
 
-        # 2. Handle Forced Modes
         if mode == InvocationMode.FORCE_PUBSUB:
             # print("Forcing Pub/Sub (Reliable).")
             return self.pubsub_invoker.invoke(target_identifier, json_payload)
@@ -66,7 +56,6 @@ class DynamicInvoker:
             # print("Forcing HTTP (Fast/Unreliable).")
             return self.http_invoker.invoke(target_identifier, json_payload)
 
-        # 3. Handle Dynamic Mode (Based on hardcoded/configured cutoff)
         if mode == InvocationMode.DYNAMIC:
             # Use HTTP for payloads larger than the dynamic cutoff (latency optimization)
             if payload_bytes > self.config.http_cutoff_bytes:
@@ -77,5 +66,4 @@ class DynamicInvoker:
             # print("Payload is small, dynamically choosing Pub/Sub (Reliable/Better fit).")
             return self.pubsub_invoker.invoke(target_identifier, json_payload)
 
-        # Should not be reached
         raise ValueError("Invalid Invocation Mode.")
