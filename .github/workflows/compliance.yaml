@@ -1,0 +1,54 @@
+name: Compliance Check
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Check out the code
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 2. Set up Python (matching your local 3.12 version)
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    # 3. Install Poetry (using the official/standard action)
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        installer-parallel: true
+
+    # 4. Load cached venv (Optional but makes builds much faster)
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+    # 5. Install dependencies (only if cache miss)
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction --no-root
+
+    # 6. Install the root project (so tests can import it)
+    - name: Install project
+      run: poetry install --no-interaction
+
+    # 7. Run your compliance script
+    # We chmod it just in case permissions were lost during git push
+    - name: Run Compliance Script
+      run: |
+        chmod +x scripts/compliance.sh
+        ./scripts/compliance.sh
