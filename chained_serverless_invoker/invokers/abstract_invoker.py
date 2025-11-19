@@ -9,13 +9,13 @@ class AbstractInvoker(ABC):
     """
 
     @abstractmethod
-    def invoke(self, target_identifier: str, payload: str, **kwargs: Any) -> Any:
+    def invoke(self, target: str, payload: str, **kwargs: Any) -> Any:
         """
         Invokes a target function asynchronously.
 
         Args:
-            target_identifier: The target (e.g., topic name or function URL).
-            payload: The JSON string payload to send.
+            payload: The string payload to send.
+            target: The target (e.g., topic name for Pub/Sub invocations or function URL for HTTP invocations).
             **kwargs: Additional parameters specific to the invoker (e.g., auth functions).
 
         Returns:
