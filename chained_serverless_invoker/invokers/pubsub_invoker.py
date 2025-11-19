@@ -1,5 +1,6 @@
-from google.cloud import pubsub_v1
 from typing import Any
+
+from google.cloud import pubsub_v1
 
 from chained_serverless_invoker.invokers.abstract_invoker import AbstractInvoker
 
@@ -12,7 +13,7 @@ class PubSubInvoker(AbstractInvoker):
     def __init__(self, publisher_client: pubsub_v1.PublisherClient):
         self.client = publisher_client
 
-    def invoke(self, target: str, payload: str, **kwargs) -> Any:
+    def invoke(self, target: str, payload: str, **kwargs: Any) -> Any:
         """
         Publishes the message and blocks until the future resolves (reliable ACK).
 

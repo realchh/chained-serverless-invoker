@@ -19,8 +19,8 @@ DEFAULT_HTTP_CUTOFF_BYTES = 1 * 1024 * 1024
 HTTP_LATENCY_SLOPE = 0.0005  # seconds per byte
 HTTP_LATENCY_INTERCEPT = 0.05  # seconds (base overhead)
 
-PUBSUB_LATENCY_SLOPE = 0.0001 # seconds per byte
-PUBSUB_LATENCY_INTERCEPT = 0.2 # seconds (base overhead)
+PUBSUB_LATENCY_SLOPE = 0.0001  # seconds per byte
+PUBSUB_LATENCY_INTERCEPT = 0.2  # seconds (base overhead)
 
 # --- Pricing (USD) ---
 PRICE_PER_GB_EGRESS = 0.12

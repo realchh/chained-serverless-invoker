@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+
 from . import constants
 
 
@@ -8,6 +9,7 @@ class InvokerConfig:
     Configuration for the DynamicInvoker.
     Allows overriding defaults for experimentation.
     """
+
     http_cutoff_bytes: int = constants.DEFAULT_HTTP_CUTOFF_BYTES
     pubsub_max_bytes: int = constants.PUBSUB_MAX_PAYLOAD_BYTES
 

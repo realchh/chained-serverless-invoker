@@ -1,10 +1,12 @@
 import threading
-import requests
-from concurrent.futures import ThreadPoolExecutor, Future
-from typing import Callable, Any, Optional
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import Any, Callable, Optional
 
-from chained_serverless_invoker.invokers.abstract_invoker import AbstractInvoker
+import requests
+
 from chained_serverless_invoker.constants import DEFAULT_HTTP_MAX_WORKERS, DEFAULT_HTTP_REQUEST_TIMEOUT_SEC
+from chained_serverless_invoker.invokers.abstract_invoker import AbstractInvoker
+
 
 # Shared thread pool for all HTTP invocations
 class HTTPExecutorManager:
@@ -17,8 +19,7 @@ class HTTPExecutorManager:
             with cls._lock:
                 if cls._executor is None:
                     cls._executor = ThreadPoolExecutor(
-                        max_workers=DEFAULT_HTTP_MAX_WORKERS,
-                        thread_name_prefix="CSI-HTTP-Worker"
+                        max_workers=DEFAULT_HTTP_MAX_WORKERS, thread_name_prefix="CSI-HTTP-Worker"
                     )
         return cls._executor
 
@@ -55,18 +56,14 @@ class HttpInvoker(AbstractInvoker):
 
         response.raise_for_status()
 
-        return {
-            "status": response.status_code,
-            "url": service_url,
-            "mode": "http"
-        }
+        return {"status": response.status_code, "url": service_url, "mode": "http"}
 
     def invoke(self, target: str, payload: str, **kwargs: Any) -> Future:
         """
         Submits the task and immediately returns the Future.
         """
         service_url = target
-        auth_token = kwargs.get('auth_token')
+        auth_token = kwargs.get("auth_token")
 
-        # The caller can use .result() to block if they want synchronous invocations or just ignore it for fire-and-forget.
+        # The caller can use .result() to block if they want synchronous invocations or ignore it for fire-and-forget.
         return self.executor.submit(self._make_http_request, service_url, payload, auth_token)

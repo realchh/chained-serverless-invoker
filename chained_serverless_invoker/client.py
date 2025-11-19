@@ -1,10 +1,8 @@
-import json
 from enum import Enum, auto
-from typing import Callable, Any, Optional
+from typing import Any, Callable, Optional
 
-from .constants import PUBSUB_MAX_PAYLOAD_BYTES
-from .invokers import AbstractInvoker, HttpInvoker, PubSubInvoker
 from .config import InvokerConfig
+from .invokers import HttpInvoker, PubSubInvoker
 
 
 class InvocationMode(Enum):
@@ -14,21 +12,19 @@ class InvocationMode(Enum):
 
 
 class DynamicInvoker:
-    def __init__(self,
-                 pubsub_client: Any,
-                 token_fetcher: Callable[[str], str],
-                 config: InvokerConfig = None):
-
+    def __init__(self, pubsub_client: Any, token_fetcher: Callable[[str], str], config: Optional[InvokerConfig] = None):
         self.config = config or InvokerConfig()
         self.http_invoker = HttpInvoker(token_fetcher)
         self.pubsub_invoker = PubSubInvoker(pubsub_client)
 
-    def invoke(self,
-               payload: str,
-               pubsub_topic: Optional[str] = None,
-               http_url: Optional[str] = None,
-               mode: InvocationMode = InvocationMode.DYNAMIC,
-               **kwargs) -> Any:  # Returns a Future-like object
+    def invoke(
+        self,
+        payload: str,
+        pubsub_topic: Optional[str] = None,
+        http_url: Optional[str] = None,
+        mode: InvocationMode = InvocationMode.DYNAMIC,
+        **kwargs: Any,
+    ) -> Any:  # Returns a Future-like object
         """
         Invoker wrapper for dynamic invocation for either Pub/Sub or HTTP.
         Args:
@@ -57,13 +53,15 @@ class DynamicInvoker:
             if pubsub_topic and not http_url:
                 mode = InvocationMode.FORCE_PUBSUB
 
-        payload_bytes = len(payload.encode('utf-8'))
+        payload_bytes = len(payload.encode("utf-8"))
         use_http = False
         if mode == InvocationMode.FORCE_PUBSUB:
             if payload_bytes > self.config.pubsub_max_bytes:
-                raise ValueError(f"Message size ({payload_bytes/(8*1024*1024)} MB) is greater than the max PubSub message\n"
-                                 f"size ({self.config.pubsub_max_bytes/(8*1024*1024)} MB).\n"
-                                 f"Please use the HTTP invoker instead or reduce your message size. ")
+                raise ValueError(
+                    f"Message size ({payload_bytes / (8 * 1024 * 1024)} MB) is greater than\n"
+                    f"the max PubSub message size ({self.config.pubsub_max_bytes / (8 * 1024 * 1024)} MB).\n"
+                    f"Please use the HTTP invoker instead or reduce your message size."
+                )
 
             print("Using Pub/Sub invoker")
             use_http = False
@@ -82,7 +80,9 @@ class DynamicInvoker:
                 use_http = False
 
         # Default fallback to Pub/Sub
-        if use_http:
+        if use_http and http_url:
             return self.http_invoker.invoke(http_url, payload, **kwargs)
-        else:
+        elif not use_http and pubsub_topic:
             return self.pubsub_invoker.invoke(pubsub_topic, payload, **kwargs)
+        else:
+            raise ValueError("No target provided.")
