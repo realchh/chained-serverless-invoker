@@ -1,5 +1,5 @@
 
-# Chained Serverless Invoker – Architecture
+# Architecture
 
 This document describes the internal architecture of the `chained-serverless-invoker`
 library and how it interacts with a higher-level middleware.
