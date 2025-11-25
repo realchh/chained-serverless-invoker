@@ -159,16 +159,18 @@ class DynamicInvoker:
         # 5) Log SEND side
         logger.info(
             "invoker_edge_send",
-            extra={"invoker": {
-                "run_id": meta.run_id,
-                "taint": taint,
-                "from_fn": meta.fn_name,
-                "to_fn": target_fn,
-                "edge_id": edge_id,
-                "mechanism": mechanism,
-                "ts_ms": send_start_ms,
-                "payload_size": len(payload_str),
-            }},
+            extra={
+                "invoker": {
+                    "run_id": meta.run_id,
+                    "taint": taint,
+                    "from_fn": meta.fn_name,
+                    "to_fn": target_fn,
+                    "edge_id": edge_id,
+                    "mechanism": mechanism,
+                    "ts_ms": send_start_ms,
+                    "payload_size": len(payload_str),
+                }
+            },
         )
 
         # 6) Delegate to the existing invoke(); mode is now FORCE_* so it won't re-decide
@@ -179,7 +181,6 @@ class DynamicInvoker:
             mode=mode,
             **kwargs,
         )
-
 
 
 def bootstrap_from_request(
