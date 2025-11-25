@@ -1,8 +1,16 @@
+import json
+import logging
+import time
+import uuid
 from enum import Enum, auto
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from .config import InvokerConfig
+from .constants import DEFAULT_META_KEY
 from .invokers import HttpInvoker, PubSubInvoker
+from .invokers.types import EdgeConfig, InvokerMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class InvocationMode(Enum):
@@ -63,11 +71,11 @@ class DynamicInvoker:
                     f"Please use the HTTP invoker instead or reduce your message size."
                 )
 
-            print("Using Pub/Sub invoker")
+            print("Force use Pub/Sub invoker")
             use_http = False
 
         elif mode == InvocationMode.FORCE_HTTP:
-            print("Using HTTP invoker")
+            print("Force use HTTP invoker")
             use_http = True
 
         elif mode == InvocationMode.DYNAMIC:
@@ -86,3 +94,137 @@ class DynamicInvoker:
             return self.pubsub_invoker.invoke(pubsub_topic, payload, **kwargs)
         else:
             raise ValueError("No target provided.")
+
+    def invoke_edge(
+        self,
+        meta: InvokerMetadata,
+        target_fn: str,
+        payload: Dict[str, Any],
+        *,
+        http_url: str | None = None,
+        pubsub_topic: str | None = None,
+        mode: InvocationMode = InvocationMode.DYNAMIC,
+        meta_key: str = DEFAULT_META_KEY,
+        **kwargs: Any,
+    ) -> Any:
+        edge = next((e for e in meta.edges if e.to == target_fn), None)
+
+        # 1) Use static edge strategy if provided
+        if edge:
+            strat = edge.strategy.lower()
+            if strat == "http":
+                mode = InvocationMode.FORCE_HTTP
+            elif strat == "pubsub":
+                mode = InvocationMode.FORCE_PUBSUB
+
+            http_url = http_url or edge.endpoint
+            pubsub_topic = pubsub_topic or edge.topic
+
+        # 2) If still DYNAMIC, but only one target is set, normalize like invoke()
+        if mode == InvocationMode.DYNAMIC:
+            if http_url and not pubsub_topic:
+                mode = InvocationMode.FORCE_HTTP
+            elif pubsub_topic and not http_url:
+                mode = InvocationMode.FORCE_PUBSUB
+
+        # 3) Attach metadata for the receiver
+        taint = uuid.uuid4().hex
+        edge_id = edge.edge_id if edge else None
+
+        payload[meta_key] = {
+            "fn_name": target_fn,
+            "run_id": meta.run_id,
+            "taint": taint,
+            "edges": [e.__dict__ for e in meta.edges],
+        }
+
+        payload_str = json.dumps(payload)
+        payload_bytes = len(payload_str.encode("utf-8"))
+        send_start_ms = int(time.time() * 1000)
+
+        # 4) Decide mechanism based on mode + size (must match actual behavior)
+        if mode == InvocationMode.FORCE_HTTP:
+            mechanism = "http"
+        elif mode == InvocationMode.FORCE_PUBSUB:
+            mechanism = "pubsub"
+        else:
+            # DYNAMIC and both targets available → size-based rule
+            if payload_bytes > self.config.http_cutoff_bytes:
+                mechanism = "http"
+                mode = InvocationMode.FORCE_HTTP
+            else:
+                mechanism = "pubsub"
+                mode = InvocationMode.FORCE_PUBSUB
+
+        # 5) Log SEND side
+        logger.info(
+            "invoker_edge_send",
+            extra={"invoker": {
+                "run_id": meta.run_id,
+                "taint": taint,
+                "from_fn": meta.fn_name,
+                "to_fn": target_fn,
+                "edge_id": edge_id,
+                "mechanism": mechanism,
+                "ts_ms": send_start_ms,
+                "payload_size": len(payload_str),
+            }},
+        )
+
+        # 6) Delegate to the existing invoke(); mode is now FORCE_* so it won't re-decide
+        return self.invoke(
+            payload_str,
+            pubsub_topic=pubsub_topic,
+            http_url=http_url,
+            mode=mode,
+            **kwargs,
+        )
+
+
+
+def bootstrap_from_request(
+    request: Any,
+    meta_key: str = DEFAULT_META_KEY,
+) -> Tuple[Optional[InvokerMetadata], Dict[str, Any]]:
+    recv_start_ms = int(time.time() * 1000)
+
+    raw_body = request.get_data() if hasattr(request, "get_data") else request.data
+    payload: Dict[str, Any] = {}
+
+    if raw_body:
+        try:
+            payload = json.loads(raw_body)
+        except json.JSONDecodeError:
+            # Not JSON → no metadata, caller can choose what to do
+            return None, {}
+
+    meta_dict = payload.get(meta_key)
+    if not meta_dict:
+        return None, payload
+
+    fn_name = meta_dict.get("fn_name", "")
+    run_id = meta_dict.get("run_id", "")
+    taint = meta_dict.get("taint", "")
+    edges = [EdgeConfig(**e) for e in meta_dict.get("edges", [])]
+
+    logger.info(
+        "invoker_edge_recv",
+        extra={
+            "invoker": {
+                "run_id": run_id,
+                "taint": taint,
+                "fn_name": fn_name,
+                "ts_ms": recv_start_ms,
+                "payload_size": len(raw_body) if raw_body else 0,
+            }
+        },
+    )
+
+    meta = InvokerMetadata(
+        fn_name=fn_name,
+        run_id=run_id,
+        taint=taint,
+        edges=edges,
+    )
+
+    return meta, payload
