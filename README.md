@@ -30,15 +30,18 @@ pip install -e .
 
 We offer two types of invocation:
 - Drop-in replacement for Pub/Sub and HTTP calls.
+
 ```python
 from google.cloud import pubsub_v1
-from chained_serverless_invoker.client import DynamicInvoker, InvocationMode
+from invoker.chained_serverless_invoker.client import DynamicInvoker, InvocationMode
 
 publisher = pubsub_v1.PublisherClient()
 
+
 def fetch_token(audience: str) -> str:
-    # e.g., use google-auth to fetch an ID token for Cloud Run
-    ...
+  # e.g., use google-auth to fetch an ID token for Cloud Run
+  ...
+
 
 invoker = DynamicInvoker(pubsub_client=publisher, token_fetcher=fetch_token)
 
@@ -46,10 +49,10 @@ payload = '{"hello": "world"}'
 
 # Let the invoker choose based on payload size:
 invoker.invoke(
-    payload,
-    http_url="https://my-service-xyz.a.run.app",
-    pubsub_topic="projects/myproj/topics/my-topic",
-    mode=InvocationMode.DYNAMIC,
+  payload,
+  http_url="https://my-service-xyz.a.run.app",
+  pubsub_topic="projects/myproj/topics/my-topic",
+  mode=InvocationMode.DYNAMIC,
 )
 ```
 In this mode, you don’t need any DAG metadata. The invoker will pick HTTP vs. Pub/Sub with the locally optimum values.
@@ -72,53 +75,55 @@ These:
 can reconstruct per-edge transport latency and the critical path.
 
 Example Cloud Run-style handler:
+
 ```python
-from chained_serverless_invoker.client import (
-    DynamicInvoker,
-    bootstrap_from_request,
+from invoker.chained_serverless_invoker.client import (
+  DynamicInvoker,
+  bootstrap_from_request,
 )
-from chained_serverless_invoker.invokers.types import InvokerMetadata, EdgeConfig
+from invoker.chained_serverless_invoker.invokers.types import InvokerMetadata, EdgeConfig
 
 publisher = ...
 invoker = DynamicInvoker(pubsub_client=publisher, token_fetcher=fetch_token)
 
 # Static edges for this logical node (in practice, generated from a config file)
 MY_EDGES = [
-    EdgeConfig(
-        to="my-workflow:step-b",
-        strategy="dynamic",
-        endpoint="https://step-b-xyz.a.run.app",
-        topic="projects/myproj/topics/step-b",
-        edge_id="step-a->step-b",
-    )
+  EdgeConfig(
+    to="my-workflow:step-b",
+    strategy="dynamic",
+    endpoint="https://step-b-xyz.a.run.app",
+    topic="projects/myproj/topics/step-b",
+    edge_id="step-a->step-b",
+  )
 ]
 
+
 def handle(request):
-    # Try to bootstrap metadata from an incoming request
-    meta, payload = bootstrap_from_request(request)
+  # Try to bootstrap metadata from an incoming request
+  meta, payload = bootstrap_from_request(request)
 
-    if meta is None:
-        # First hop: application/gateway is responsible for assigning run_id
-        run_id = "some-run-id"  # e.g. uuid4().hex at the gateway
-        meta = InvokerMetadata(
-            fn_name="my-workflow:step-a",
-            run_id=run_id,
-            taint="root",
-            edges=MY_EDGES,
-        )
-        payload = {"foo": "bar"}
-
-    # Do your normal business logic here, mutating `payload` as needed
-    payload["result"] = "ok"
-
-    # Chain to the next node in the DAG
-    invoker.invoke_edge(
-        meta,
-        target_fn="my-workflow:step-b",
-        payload=payload,
+  if meta is None:
+    # First hop: application/gateway is responsible for assigning run_id
+    run_id = "some-run-id"  # e.g. uuid4().hex at the gateway
+    meta = InvokerMetadata(
+      fn_name="my-workflow:step-a",
+      run_id=run_id,
+      taint="root",
+      edges=MY_EDGES,
     )
+    payload = {"foo": "bar"}
 
-    return ("OK", 200)
+  # Do your normal business logic here, mutating `payload` as needed
+  payload["result"] = "ok"
+
+  # Chain to the next node in the DAG
+  invoker.invoke_edge(
+    meta,
+    target_fn="my-workflow:step-b",
+    payload=payload,
+  )
+
+  return ("OK", 200)
 ```
 
 The logs produced by this flow are designed to be consumed by a separate middleware

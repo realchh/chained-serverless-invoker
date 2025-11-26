@@ -2,7 +2,7 @@ from typing import Any
 
 from google.cloud import pubsub_v1
 
-from chained_serverless_invoker.invokers.abstract_invoker import AbstractInvoker
+from invoker.chained_serverless_invoker.invokers.abstract_invoker import AbstractInvoker
 
 
 class PubSubInvoker(AbstractInvoker):
