@@ -9,6 +9,14 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 PERCENTILES = (10, 25, 50, 95, 99)
+LATENCY_FIELDS = [
+    "end_to_end_latency_ms",
+    "total_latency_ms",
+    "total_http_latency_ms",
+    "total_pubsub_latency_ms",
+    "latency_ms",
+    "transport_latency_ms",
+]
 
 
 def percentile(values: List[float], pct: float) -> float | None:
@@ -36,11 +44,19 @@ def summarize_directory(csv_dir: Path) -> Dict[Tuple[str, str, str, str], Dict[s
             for row in reader:
                 msg_size = row.get("message_size") or row.get("payload_size") or "unknown"
                 rate = row.get("invocation_rate") or row.get("rate") or "unknown"
-                transport = row.get("transport_latency_ms") or row.get("latency_ms") or row.get("end_to_end_latency_ms")
+                val = None
+                for field in LATENCY_FIELDS:
+                    if row.get(field) not in (None, ""):
+                        val = row[field]
+                        break
                 try:
-                    latency = float(transport)
+                    latency = float(val) if val is not None else None
                 except (TypeError, ValueError):
                     continue
+                if latency is None:
+                    continue
+                # Clamp negative transport/acks to zero to avoid skew.
+                latency = max(latency, 0.0)
                 metrics[(mechanism, region_pair, msg_size, rate)].append(latency)
 
     summaries: Dict[Tuple[str, str, str, str], Dict[str, float]] = {}
@@ -50,6 +66,212 @@ def summarize_directory(csv_dir: Path) -> Dict[Tuple[str, str, str, str], Dict[s
         summaries[key] = {f"p{p}": float(percentile(vals, p)) for p in PERCENTILES}
         summaries[key]["count"] = len(vals)
     return summaries
+
+
+def _trim(values: List[float], low_pct: float = 1.0, high_pct: float = 99.0) -> List[float]:
+    """Trim extremes (e.g., cold starts) by percentile range."""
+    if not values:
+        return values
+    sorted_vals = sorted(values)
+    k_low = int(len(sorted_vals) * low_pct / 100)
+    k_high = int(len(sorted_vals) * high_pct / 100)
+    k_high = min(k_high, len(sorted_vals) - 1)
+    return sorted_vals[k_low : k_high + 1]
+
+
+def _load_raw(csv_dir: Path) -> List[Tuple[str, str, str, str, float]]:
+    """Return raw rows as (mechanism, region_pair, size, rate, latency_ms)."""
+    rows: List[Tuple[str, str, str, str, float]] = []
+    for path in csv_dir.glob("*.csv"):
+        mechanism = "http" if "http" in path.name else "pubsub"
+        region_pair = "ea1->we1" if "ea1_to_we1" in path.name else "ea1->ea1"
+        with path.open() as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                msg_size = row.get("message_size") or row.get("payload_size") or "unknown"
+                rate = row.get("invocation_rate") or row.get("rate") or "unknown"
+                val = None
+                for field in LATENCY_FIELDS:
+                    if row.get(field) not in (None, ""):
+                        val = row[field]
+                        break
+                try:
+                    latency = float(val) if val is not None else None
+                except (TypeError, ValueError):
+                    continue
+                if latency is None:
+                    continue
+                latency = max(latency, 0.0)
+                rows.append((mechanism, region_pair, msg_size, rate, latency))
+    return rows
+
+
+def plot_scenarios(csv_dir: Path, output_prefix: Path) -> None:
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except ImportError:
+        print("matplotlib not installed; skipping scatter/box plots.")
+        return
+
+    raw = _load_raw(csv_dir)
+    if not raw:
+        print(f"No data to plot under {csv_dir}")
+        return
+
+    for mech in ("http", "pubsub"):
+        filtered = [(r, s, rate, lat) for m, r, s, rate, lat in raw if m == mech]
+        if not filtered:
+            continue
+
+        # Group by scenario label for a compact boxplot: region|size|rate
+        groups: Dict[str, List[float]] = defaultdict(list)
+        for region, size, rate, lat in filtered:
+            label = f"{region}-{size}-{rate}"
+            groups[label].append(lat)
+
+        groups = {label: _trim(vals) for label, vals in groups.items() if vals}
+
+        labels = sorted(groups.keys())
+        data = [groups[l] for l in labels]
+
+        plt.figure(figsize=(max(8, len(labels) * 0.5), 5))
+        plt.boxplot(data, labels=labels, showfliers=True)
+        plt.xticks(rotation=75, ha="right")
+        plt.ylabel("Transport latency (ms)")
+        plt.title(f"{mech.upper()} latency per scenario")
+        plt.tight_layout()
+        outfile = output_prefix.with_name(f"{output_prefix.stem}_{mech}{output_prefix.suffix or '.png'}")
+        plt.savefig(outfile, dpi=150)
+        plt.close()
+        print(f"Wrote {mech} plot to {outfile}")
+
+
+def _group_trimmed(raw: List[Tuple[str, str, str, str, float]]) -> Dict[str, Dict[str, Dict[str, List[float]]]]:
+    """
+    Nested dict: mechanism -> region -> scenario_label (size-rate) -> trimmed samples.
+    """
+    grouped: Dict[str, Dict[str, Dict[str, List[float]]]] = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for mech, region, size, rate, lat in raw:
+        label = f"{size}-{rate}"
+        grouped[mech][region][label].append(lat)
+    # Trim per scenario
+    for mech in grouped:
+        for region in grouped[mech]:
+            for label, vals in list(grouped[mech][region].items()):
+                grouped[mech][region][label] = _trim(vals)
+    return grouped
+
+
+def plot_modes(csv_dir: Path, output_prefix: Path, modes: List[str]) -> None:
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except ImportError:
+        print("matplotlib not installed; skipping requested plots.")
+        return
+
+    raw = _load_raw(csv_dir)
+    if not raw:
+        print(f"No data to plot under {csv_dir}")
+        return
+
+    grouped = _group_trimmed(raw)
+    mechanisms = sorted(grouped.keys())
+    regions = sorted({region for mech in grouped.values() for region in mech})
+
+    def next_path(suffix: str) -> Path:
+        return output_prefix.with_name(f"{output_prefix.stem}_{suffix}{output_prefix.suffix or '.png'}")
+
+    if "bars" in modes:
+        for mech in mechanisms:
+            labels = []
+            p50 = []
+            p95 = []
+            counts = []
+            for region in regions:
+                scenarios = grouped[mech].get(region, {})
+                for scenario in sorted(scenarios):
+                    vals = scenarios[scenario]
+                    if not vals:
+                        continue
+                    labels.append(f"{region}-{scenario}")
+                    p50.append(percentile(vals, 50) or 0.0)
+                    p95.append(percentile(vals, 95) or 0.0)
+                    counts.append(len(vals))
+
+            if not labels:
+                continue
+
+            x = list(range(len(labels)))
+            fig, ax = plt.subplots(figsize=(max(8, len(labels) * 0.6), 5))
+            ax.bar(x, p50, color="#1f77b4", alpha=0.7, label="p50")
+            ax.scatter(x, p95, color="#d62728", marker="o", label="p95")
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, rotation=75, ha="right")
+            ax.set_ylabel("Transport latency (ms)")
+            ax.set_title(f"{mech.upper()} p50/p95 by scenario (trimmed 1–99 pct)")
+            ax.legend()
+            fig.tight_layout()
+            outfile = next_path(f"{mech}_bars")
+            fig.savefig(outfile, dpi=150)
+            plt.close(fig)
+            print(f"Wrote {mech} bars plot to {outfile}")
+
+    if "violins" in modes:
+        for mech in mechanisms:
+            for region in regions:
+                scenarios = grouped[mech].get(region, {})
+                labels = sorted(scenarios.keys())
+                data = [scenarios[l] for l in labels if scenarios[l]]
+                labels = [l for l in labels if scenarios[l]]
+                if not data:
+                    continue
+
+                fig, ax = plt.subplots(figsize=(max(8, len(labels) * 0.6), 5))
+                parts = ax.violinplot(data, showmeans=False, showmedians=False, showextrema=False)
+                for pc in parts["bodies"]:
+                    pc.set_facecolor("#1f77b4" if mech == "http" else "#ff7f0e")
+                    pc.set_alpha(0.6)
+                # Overlay p50 and p95 markers
+                positions = list(range(1, len(labels) + 1))
+                p50 = [percentile(d, 50) or 0.0 for d in data]
+                p95 = [percentile(d, 95) or 0.0 for d in data]
+                ax.scatter(positions, p50, color="#000000", marker="o", s=10, label="p50")
+                ax.scatter(positions, p95, color="#d62728", marker="x", s=14, label="p95")
+                ax.set_xticks(positions)
+                ax.set_xticklabels(labels, rotation=75, ha="right")
+                ax.set_ylabel("Transport latency (ms)")
+                ax.set_title(f"{mech.upper()} {region} violins (trimmed 1–99 pct)")
+                ax.legend()
+                fig.tight_layout()
+                outfile = next_path(f"{mech}_{region}_violins")
+                fig.savefig(outfile, dpi=150)
+                plt.close(fig)
+                print(f"Wrote {mech} {region} violins to {outfile}")
+
+    if "strip" in modes:
+        for mech in mechanisms:
+            for region in regions:
+                scenarios = grouped[mech].get(region, {})
+                labels = sorted(scenarios.keys())
+                if not labels:
+                    continue
+                fig, ax = plt.subplots(figsize=(max(8, len(labels) * 0.6), 5))
+                for idx, label in enumerate(labels):
+                    vals = scenarios[label]
+                    if not vals:
+                        continue
+                    jitter = [idx + (0.1 * (i / len(vals) - 0.5)) for i in range(len(vals))]
+                    ax.scatter(jitter, vals, alpha=0.5, s=6, color="#1f77b4" if mech == "http" else "#ff7f0e")
+                ax.set_xticks(list(range(len(labels))))
+                ax.set_xticklabels(labels, rotation=75, ha="right")
+                ax.set_ylabel("Transport latency (ms, log scale)")
+                ax.set_yscale("log")
+                ax.set_title(f"{mech.upper()} {region} strip (trimmed 1–99 pct)")
+                fig.tight_layout()
+                outfile = next_path(f"{mech}_{region}_strip")
+                fig.savefig(outfile, dpi=150)
+                plt.close(fig)
+                print(f"Wrote {mech} {region} strip plot to {outfile}")
 
 
 def main() -> None:
@@ -63,6 +285,23 @@ def main() -> None:
     )
     parser.add_argument("--save-json", type=Path, help="Optional path to write the summary as JSON.")
     parser.add_argument("--plot", type=Path, help="Optional path to save a PNG plot (requires matplotlib).")
+    parser.add_argument(
+        "--plot-scenarios",
+        type=Path,
+        help="Optional prefix path to save per-mechanism scenario boxplots (requires matplotlib).",
+    )
+    parser.add_argument(
+        "--plot-modes",
+        type=str,
+        default="",
+        help="Comma-separated plot styles among: bars, violins, strip (requires matplotlib).",
+    )
+    parser.add_argument(
+        "--plot-prefix",
+        type=Path,
+        default=Path("latency"),
+        help="Prefix path (stem) for plot-modes outputs, suffix is added automatically.",
+    )
     args = parser.parse_args()
 
     summaries = summarize_directory(args.csv_dir)
@@ -118,6 +357,14 @@ def main() -> None:
         plt.savefig(args.plot, dpi=150)
         plt.close()
         print(f"Wrote plot to {args.plot}")
+
+    if args.plot_scenarios:
+        plot_scenarios(args.csv_dir, args.plot_scenarios)
+
+    if args.plot_modes:
+        modes = [m.strip() for m in args.plot_modes.split(",") if m.strip()]
+        if modes:
+            plot_modes(args.csv_dir, args.plot_prefix, modes)
 
 
 if __name__ == "__main__":
