@@ -4,38 +4,35 @@ from dataclasses import replace
 from typing import Dict, Mapping, Tuple
 
 from .config import WorkflowConfig, WorkflowEdge, dump_config, load_config
+from . import constants
 from .critical_path import build_dag, critical_path_from_stats, edge_key
 from .stats import StatSummary
 
 
-def _choose_fastest_mechanism(edge_key_str: str, edge_stats: Mapping[Tuple[str, str], StatSummary]) -> str | None:
-    http = edge_stats.get((edge_key_str, "http"))
-    pubsub = edge_stats.get((edge_key_str, "pubsub"))
+def _mechanism_cost(edge_key_str: str, mechanism: str, stats: Mapping[Tuple[str, str], StatSummary]) -> float | None:
+    summary = stats.get((edge_key_str, mechanism))
+    return summary.p50 if summary else None
 
-    if http and pubsub:
-        return "http" if http.p50 <= pubsub.p50 else "pubsub"
-    if http:
-        return "http"
-    if pubsub:
-        return "pubsub"
-    return None
+
+def _edge_cost_for_strategy(edge: WorkflowEdge, strategy: str, stats: Mapping[Tuple[str, str], StatSummary]) -> float | None:
+    return _mechanism_cost(edge_key(edge), strategy.lower(), stats)
 
 
 def _weight_for_edge(edge: WorkflowEdge, stats: Mapping[Tuple[str, str], StatSummary]) -> float:
     key = edge_key(edge)
-    http = stats.get((key, "http"))
-    pubsub = stats.get((key, "pubsub"))
+    http = _mechanism_cost(key, "http", stats)
+    pubsub = _mechanism_cost(key, "pubsub", stats)
 
     strat = edge.strategy.lower()
-    if strat == "http" and http:
-        return http.p50
-    if strat == "pubsub" and pubsub:
-        return pubsub.p50
+    if strat == "http" and http is not None:
+        return http
+    if strat == "pubsub" and pubsub is not None:
+        return pubsub
     if strat == "dynamic":
-        candidates = [s.p50 for s in (http, pubsub) if s]
+        candidates = [c for c in (http, pubsub) if c is not None]
         if candidates:
             return min(candidates)
-    return 0.0
+    return 0.0  # missing stats → treat as zero so we don't block path computation
 
 
 def _node_weights(node_stats: Mapping[str, StatSummary]) -> Dict[str, float]:
@@ -48,32 +45,57 @@ def rewrite_config_for_critical_path(
     edge_stats: Mapping[Tuple[str, str], StatSummary],
     node_stats: Mapping[str, StatSummary] | None = None,
 ) -> WorkflowConfig:
+    # TODO: incorporate cost-aware scores (latency + \$) once pricing signals are available.
     dag = build_dag(config)
-    edge_weights = {edge_key(e): _weight_for_edge(e, edge_stats) for e in config.edges}
     node_weights = _node_weights(node_stats or {})
+    edges = list(config.edges)
 
-    _, path_nodes = critical_path_from_stats(dag, edge_stats=edge_weights, node_stats=node_weights)
+    # Greedy: flip one edge on the current critical path at a time if it improves p50 latency.
+    max_iters = len(edges) or 1
+    for _ in range(max_iters):
+        edge_weights = {edge_key(e): _weight_for_edge(e, edge_stats) for e in edges}
+        _, path_nodes = critical_path_from_stats(dag, edge_stats=edge_weights, node_stats=node_weights)
+        if len(path_nodes) < 2:
+            break
 
-    path_edges = {(path_nodes[i], path_nodes[i + 1]) for i in range(len(path_nodes) - 1)}
+        path_pairs = [(path_nodes[i], path_nodes[i + 1]) for i in range(len(path_nodes) - 1)]
 
-    new_edges: list[WorkflowEdge] = []
-    for e in config.edges:
-        k = edge_key(e)
-        on_path = (e.from_fn, e.to_fn) in path_edges
+        best_gain = 0.0
+        best_idx: int | None = None
+        best_mech: str | None = None
 
-        if on_path:
-            mechanism = _choose_fastest_mechanism(k, edge_stats)
-            if mechanism:
-                new_edges.append(replace(e, strategy=mechanism))
+        for frm, to in path_pairs:
+            try:
+                idx = next(i for i, e in enumerate(edges) if e.from_fn == frm and e.to_fn == to)
+            except StopIteration:
                 continue
-        else:
-            if e.topic:
-                new_edges.append(replace(e, strategy="pubsub"))
-                continue
 
-        new_edges.append(e)
+            edge = edges[idx]
+            current_mech = edge.strategy.lower()
+            current_cost = _edge_cost_for_strategy(edge, current_mech, edge_stats)
+            if current_cost is None:
+                current_cost = 0.0
 
-    return WorkflowConfig(workflow_id=config.workflow_id, edges=new_edges)
+            for alt in ("http", "pubsub"):
+                if alt == current_mech:
+                    continue
+                alt_cost = _edge_cost_for_strategy(edge, alt, edge_stats)
+                if alt_cost is None:
+                    continue
+
+                gain = current_cost - alt_cost
+                if gain > best_gain:
+                    best_gain = gain
+                    best_idx = idx
+                    best_mech = alt
+
+        # Require a tiny positive gain to avoid churn on noise.
+        if best_idx is None or best_mech is None or best_gain <= constants.GAIN_THRESHOLD_MS:
+            break
+
+        edges[best_idx] = replace(edges[best_idx], strategy=best_mech)
+
+    return WorkflowConfig(workflow_id=config.workflow_id, edges=edges)
 
 
 __all__ = [
