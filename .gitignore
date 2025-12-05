@@ -2,3 +2,9 @@
 __pycache__/
 *.pyc
 .venv/
+.coverage
+pytest.xml
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.vscode/
