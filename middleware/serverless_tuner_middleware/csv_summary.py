@@ -146,6 +146,26 @@ def plot_scenarios(csv_dir: Path, output_prefix: Path) -> None:
         print(f"Wrote {mech} plot to {outfile}")
 
 
+def _parse_size_kb(size_label: str) -> float:
+    if size_label.lower().startswith("small"):
+        return 10.0
+    if size_label.lower().startswith("large"):
+        return 1024.0
+    try:
+        return float(size_label)
+    except ValueError:
+        return 0.0
+
+
+def _parse_rate(rate_label: str) -> float:
+    if rate_label.endswith("_rps"):
+        rate_label = rate_label.replace("_rps", "")
+    try:
+        return float(rate_label)
+    except ValueError:
+        return 0.0
+
+
 def _group_trimmed(raw: List[Tuple[str, str, str, str, float]]) -> Dict[str, Dict[str, Dict[str, List[float]]]]:
     """
     Nested dict: mechanism -> region -> scenario_label (size-rate) -> trimmed samples.
@@ -273,6 +293,112 @@ def plot_modes(csv_dir: Path, output_prefix: Path, modes: List[str]) -> None:
                 plt.close(fig)
                 print(f"Wrote {mech} {region} strip plot to {outfile}")
 
+    if "regress" in modes:
+        try:
+            import numpy as np  # type: ignore
+        except ImportError:
+            print("numpy not installed; skipping regression plots.")
+            return
+
+        for mech in mechanisms:
+            for region in regions:
+                scenarios = grouped[mech].get(region, {})
+                points = []
+                for label, vals in scenarios.items():
+                    if not vals:
+                        continue
+                    size_label, rate_label = label.split("-", 1)
+                    x = _parse_size_kb(size_label)
+                    rate = _parse_rate(rate_label)
+                    for v in vals:
+                        points.append((x, rate, v))
+                if not points:
+                    continue
+
+                # Fit simple linear model: latency = a * size_kb + b * rate + c
+                X = np.array([[p[0], p[1], 1.0] for p in points])
+                y = np.array([p[2] for p in points])
+                coef, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+                a, b, c = coef
+
+                # Scatter by size, color by rate bucket
+                fig, ax = plt.subplots(figsize=(6, 4))
+                rates = sorted({p[1] for p in points})
+                colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+                for idx, r in enumerate(rates):
+                    xs = [p[0] for p in points if p[1] == r]
+                    ys = [p[2] for p in points if p[1] == r]
+                    ax.scatter(xs, ys, color=colors[idx % len(colors)], alpha=0.6, s=12, label=f"{r} rps")
+                    # Regression line per rate
+                    xs_line = np.array([min(xs), max(xs)])
+                    ys_line = a * xs_line + b * r + c
+                    ax.plot(xs_line, ys_line, color=colors[idx % len(colors)], linestyle="--", linewidth=1)
+
+                ax.set_xlabel("Payload size (KB)")
+                ax.set_ylabel("End-to-end latency (ms)")
+                ax.set_title(f"{mech.upper()} {region} linear fit: latency = {a:.2f}*size + {b:.2f}*rate + {c:.2f}")
+                ax.legend()
+                fig.tight_layout()
+                outfile = output_prefix.with_name(
+                    f"{output_prefix.stem}_{mech}_{region}_regress{output_prefix.suffix or '.png'}"
+                )
+                fig.savefig(outfile, dpi=150)
+                plt.close(fig)
+                print(f"Wrote {mech} {region} regression plot to {outfile}")
+
+    if "surface" in modes:
+        try:
+            import numpy as np  # type: ignore
+            from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+        except ImportError:
+            print("numpy/matplotlib 3D not installed; skipping surface plots.")
+            return
+
+        for mech in mechanisms:
+            for region in regions:
+                scenarios = grouped[mech].get(region, {})
+                points = []
+                for label, vals in scenarios.items():
+                    if not vals:
+                        continue
+                    size_label, rate_label = label.split("-", 1)
+                    x = _parse_size_kb(size_label)
+                    rate = _parse_rate(rate_label)
+                    for v in vals:
+                        points.append((x, rate, v))
+                if not points:
+                    continue
+
+                xs = np.array([p[0] for p in points])
+                rs = np.array([p[1] for p in points])
+                ys = np.array([p[2] for p in points])
+
+                # Fit simple plane: latency = a*size + b*rate + c
+                X = np.column_stack((xs, rs, np.ones_like(xs)))
+                coef, _, _, _ = np.linalg.lstsq(X, ys, rcond=None)
+                a, b, c = coef
+
+                size_grid = np.linspace(xs.min(), xs.max(), 30)
+                rate_grid = np.linspace(rs.min(), rs.max(), 30)
+                S, R = np.meshgrid(size_grid, rate_grid)
+                Z = a * S + b * R + c
+
+                fig = plt.figure(figsize=(7, 5))
+                ax = fig.add_subplot(111, projection="3d")
+                ax.plot_surface(S, R, Z, alpha=0.4, color="#1f77b4" if mech == "http" else "#ff7f0e")
+                ax.scatter(xs, rs, ys, color="#000000", s=8, alpha=0.6)
+                ax.set_xlabel("Payload size (KB)")
+                ax.set_ylabel("Rate (rps)")
+                ax.set_zlabel("End-to-end latency (ms)")
+                ax.set_title(f"{mech.upper()} {region} plane fit: {a:.2f}*size + {b:.2f}*rate + {c:.2f}")
+                fig.tight_layout()
+                outfile = output_prefix.with_name(
+                    f"{output_prefix.stem}_{mech}_{region}_surface{output_prefix.suffix or '.png'}"
+                )
+                fig.savefig(outfile, dpi=150)
+                plt.close(fig)
+                print(f"Wrote {mech} {region} surface plot to {outfile}")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize latency CSVs into percentiles.")
@@ -301,6 +427,11 @@ def main() -> None:
         type=Path,
         default=Path("latency"),
         help="Prefix path (stem) for plot-modes outputs, suffix is added automatically.",
+    )
+    parser.add_argument(
+        "--plot-surface",
+        action="store_true",
+        help="Generate a simple 3D surface (size vs rate vs latency) per mechanism/region (requires matplotlib).",
     )
     args = parser.parse_args()
 
