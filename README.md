@@ -12,6 +12,10 @@ It can:
 - optionally carry DAG metadata and structured logs so an external middleware
   can learn per-edge latency and rewrite the workflow configuration.
 
+The repo also contains a standalone offline middleware (packaged separately) with a CLI (`csi-middleware`)
+that parses the invoker logs, computes per-edge/node latency stats, and rewrites workflow configs based on the
+critical path. Install both packages side by side to experiment locally.
+
 </div>
 
 ## ⚡️ Quickstart
@@ -25,6 +29,80 @@ git clone https://github.com/realchh/chained-serverless-invoker.git
 cd chained-serverless-invoker
 pip install -e .
 ```
+
+To experiment with the offline middleware + CLI as well:
+
+```bash
+pip install -e invoker -e middleware
+# CLI entry point (when installed): csi-middleware --help
+```
+
+## End-to-End: Invoker + Middleware (Step by Step)
+
+1) **Instrument your functions** with `DynamicInvoker` and `bootstrap_from_request` so send/recv logs include the `invoker` block (see example below).
+2) **Run your workflow** and collect logs (e.g., export Cloud Logging to NDJSON). The middleware expects `invoker_edge_send` and `invoker_edge_recv` entries with the `invoker` payload.
+3) **Summarize benchmarks (optional)**: use `python middleware/serverless_tuner_middleware/csv_summary.py --help` to see options for deriving percentile baselines and plots from the CSVs in `middleware/serverless_tuner_middleware/csv/`.
+4) **Rewrite the config** using the CLI:
+   ```bash
+   csi-middleware \
+     --logs /path/to/logs.ndjson \
+     --config-in /path/to/workflow_config.json \
+     --config-out /path/to/new_config.json
+   ```
+   This parses logs, computes per-edge/node latency stats, finds the current critical path, and chooses faster mechanisms on that path.
+5) **Deploy** using the rewritten config (e.g., feed it back to your orchestrator).
+
+Example config (`workflow_config.json`):
+
+```json
+{
+  "workflow_id": "demo-workflow",
+  "edges": [
+    {
+      "from_fn": "entry",
+      "to_fn": "A",
+      "strategy": "dynamic",
+      "endpoint": "https://a-xyz.a.run.app",
+      "topic": "projects/myproj/topics/a",
+      "edge_id": "entry-A"
+    },
+    {
+      "from_fn": "A",
+      "to_fn": "B",
+      "strategy": "dynamic",
+      "endpoint": "https://b-xyz.a.run.app",
+      "topic": "projects/myproj/topics/b",
+      "edge_id": "A-B"
+    },
+    {
+      "from_fn": "A",
+      "to_fn": "C",
+      "strategy": "dynamic",
+      "endpoint": "https://c-xyz.a.run.app",
+      "topic": "projects/myproj/topics/c",
+      "edge_id": "A-C"
+    }
+  ]
+}
+```
+
+You can also build and save a config programmatically:
+
+```python
+from middleware.serverless_tuner_middleware.config import WorkflowConfig, WorkflowEdge, dump_config
+
+cfg = WorkflowConfig(
+    workflow_id="demo-workflow",
+    edges=[
+        WorkflowEdge(from_fn="entry", to_fn="A", strategy="dynamic", endpoint="https://a-xyz.a.run.app", topic="projects/myproj/topics/a", edge_id="entry-A"),
+        WorkflowEdge(from_fn="A", to_fn="B", strategy="dynamic", endpoint="https://b-xyz.a.run.app", topic="projects/myproj/topics/b", edge_id="A-B"),
+        WorkflowEdge(from_fn="A", to_fn="C", strategy="dynamic", endpoint="https://c-xyz.a.run.app", topic="projects/myproj/topics/c", edge_id="A-C"),
+    ],
+)
+
+dump_config(cfg, "workflow_config.json")
+```
+
 
 ### Usage
 

@@ -73,21 +73,28 @@ def rewrite_config_for_critical_path(
             edge = edges[idx]
             current_mech = edge.strategy.lower()
             current_cost = _edge_cost_for_strategy(edge, current_mech, edge_stats)
+            # If dynamic or missing, fall back to the best known cost for this edge.
             if current_cost is None:
-                current_cost = 0.0
+                current_cost = _weight_for_edge(edge, edge_stats)
 
-            for alt in ("http", "pubsub"):
-                if alt == current_mech:
-                    continue
-                alt_cost = _edge_cost_for_strategy(edge, alt, edge_stats)
-                if alt_cost is None:
-                    continue
+            # Identify the fastest available mechanism for this edge.
+            http_cost = _mechanism_cost(edge_key(edge), "http", edge_stats)
+            pubsub_cost = _mechanism_cost(edge_key(edge), "pubsub", edge_stats)
+            candidates = [(http_cost, "http"), (pubsub_cost, "pubsub")]
+            candidates = [(c, m) for c, m in candidates if c is not None]
+            best_pair = min(candidates, default=None, key=lambda x: x[0])
 
-                gain = current_cost - alt_cost
-                if gain > best_gain:
-                    best_gain = gain
-                    best_idx = idx
-                    best_mech = alt
+            if best_pair:
+                best_cost, fastest_mech = best_pair
+                if fastest_mech != current_mech:
+                    gain = (current_cost or best_cost) - best_cost
+                    # If current is dynamic, allow a zero-gain flip to make it explicit.
+                    if current_mech == "dynamic" and gain <= 0:
+                        gain = constants.GAIN_THRESHOLD_MS + 0.001
+                    if gain > best_gain:
+                        best_gain = gain
+                        best_idx = idx
+                        best_mech = fastest_mech
 
         # Require a tiny positive gain to avoid churn on noise.
         if best_idx is None or best_mech is None or best_gain <= constants.GAIN_THRESHOLD_MS:

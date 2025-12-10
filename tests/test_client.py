@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 from unittest.mock import patch
@@ -234,3 +235,28 @@ def test_bootstrap_from_request_without_metadata_returns_none():
 
     assert meta is None
     assert payload["x"] == 99
+
+
+def test_bootstrap_from_pubsub_event_base64(caplog):
+    caplog.set_level(logging.INFO, logger="chained_serverless_invoker.client")
+
+    body = {
+        "x": "ps",
+        DEFAULT_META_KEY: {
+            "fn_name": "B",
+            "run_id": "run-ps",
+            "taint": "t-ps",
+            "edges": [],
+        },
+    }
+    encoded = base64.b64encode(json.dumps(body).encode("utf-8")).decode("utf-8")
+    event = {"data": encoded}
+
+    meta, payload = bootstrap_from_request(event)
+
+    assert meta is not None
+    assert meta.fn_name == "B"
+    assert payload["x"] == "ps"
+
+    recv_records = [r for r in caplog.records if r.message == "invoker_edge_recv"]
+    assert recv_records

@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import time
@@ -31,6 +32,7 @@ class DynamicInvoker:
         pubsub_topic: Optional[str] = None,
         http_url: Optional[str] = None,
         mode: InvocationMode = InvocationMode.DYNAMIC,
+        log_decision: bool = True,
         **kwargs: Any,
     ) -> Any:  # Returns a Future-like object
         """
@@ -86,6 +88,20 @@ class DynamicInvoker:
             else:
                 print("Using Pub/Sub invoker")
                 use_http = False
+
+        if log_decision:
+            mechanism = "http" if use_http else "pubsub"
+            logger.info(
+                "invoker_invoke",
+                extra={
+                    "invoker": {
+                        "mechanism": mechanism,
+                        "mode": mode.name,
+                        "ts_ms": int(time.time() * 1000),
+                        "payload_size": payload_bytes,
+                    }
+                },
+            )
 
         # Default fallback to Pub/Sub
         if use_http and http_url:
@@ -179,24 +195,43 @@ class DynamicInvoker:
             pubsub_topic=pubsub_topic,
             http_url=http_url,
             mode=mode,
+            log_decision=False,  # avoid duplicate logging; send-side log is invoker_edge_send
             **kwargs,
         )
 
 
-def bootstrap_from_request(
-    request: Any,
-    meta_key: str = DEFAULT_META_KEY,
-) -> Tuple[Optional[InvokerMetadata], Dict[str, Any]]:
+def bootstrap_from_request(request: Any, meta_key: str = DEFAULT_META_KEY) -> Tuple[Optional[InvokerMetadata], Dict[str, Any]]:
+    """
+    Parse incoming request/event payload for DAG metadata.
+
+    Supports:
+    - HTTP frameworks exposing .get_data() or .data (bytes/str)
+    - Pub/Sub-style event dicts with a base64-encoded "data" field
+    """
     recv_start_ms = int(time.time() * 1000)
 
-    raw_body = request.get_data() if hasattr(request, "get_data") else request.data
+    raw_body: bytes | str | None = None
+
+    if hasattr(request, "get_data"):
+        raw_body = request.get_data()
+    elif hasattr(request, "data"):
+        raw_body = request.data
+    elif isinstance(request, dict) and "data" in request:
+        raw_body = request["data"]
+
+    if isinstance(raw_body, str):
+        # Pub/Sub delivers base64-encoded strings in some runtimes
+        try:
+            raw_body = base64.b64decode(raw_body)
+        except Exception:
+            raw_body = raw_body.encode("utf-8", errors="ignore")
+
     payload: Dict[str, Any] = {}
 
     if raw_body:
         try:
             payload = json.loads(raw_body)
         except json.JSONDecodeError:
-            # Not JSON → no metadata, caller can choose what to do
             return None, {}
 
     meta_dict = payload.get(meta_key)
