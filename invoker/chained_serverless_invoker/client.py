@@ -206,7 +206,8 @@ def bootstrap_from_request(request: Any, meta_key: str = DEFAULT_META_KEY) -> Tu
 
     Supports:
     - HTTP frameworks exposing .get_data() or .data (bytes/str)
-    - Pub/Sub-style event dicts with a base64-encoded "data" field
+    - Pub/Sub push events (JSON with message.data base64)
+    - Raw dict events with a base64-encoded "data" field
     """
     recv_start_ms = int(time.time() * 1000)
 
@@ -226,13 +227,29 @@ def bootstrap_from_request(request: Any, meta_key: str = DEFAULT_META_KEY) -> Tu
         except Exception:
             raw_body = raw_body.encode("utf-8", errors="ignore")
 
-    payload: Dict[str, Any] = {}
-
+    outer_payload: Dict[str, Any] = {}
     if raw_body:
         try:
-            payload = json.loads(raw_body)
+            outer_payload = json.loads(raw_body)
         except json.JSONDecodeError:
             return None, {}
+
+    payload: Dict[str, Any] = {}
+    pubsub_context: Dict[str, Any] = {}
+    if isinstance(outer_payload, dict) and "message" in outer_payload:
+        msg = outer_payload.get("message") or {}
+        data_field = msg.get("data")
+        if data_field:
+            try:
+                decoded = base64.b64decode(data_field)
+                payload = json.loads(decoded)
+            except Exception:
+                payload = {}
+        for ctx_key in ("subscription", "deliveryAttempt", "delivery_attempt"):
+            if ctx_key in outer_payload:
+                pubsub_context[ctx_key] = outer_payload[ctx_key]
+    elif isinstance(outer_payload, dict):
+        payload = outer_payload
 
     meta_dict = payload.get(meta_key)
     if not meta_dict:
@@ -262,5 +279,8 @@ def bootstrap_from_request(request: Any, meta_key: str = DEFAULT_META_KEY) -> Tu
         taint=taint,
         edges=edges,
     )
+
+    if pubsub_context:
+        payload.setdefault("pubsub_context", {}).update(pubsub_context)
 
     return meta, payload

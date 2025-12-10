@@ -250,13 +250,15 @@ def test_bootstrap_from_pubsub_event_base64(caplog):
         },
     }
     encoded = base64.b64encode(json.dumps(body).encode("utf-8")).decode("utf-8")
-    event = {"data": encoded}
+    event = {"message": {"data": encoded}, "subscription": "sub-1", "deliveryAttempt": 2}
 
     meta, payload = bootstrap_from_request(event)
 
     assert meta is not None
     assert meta.fn_name == "B"
     assert payload["x"] == "ps"
+    assert payload["pubsub_context"]["subscription"] == "sub-1"
+    assert payload["pubsub_context"]["deliveryAttempt"] == 2
 
     recv_records = [r for r in caplog.records if r.message == "invoker_edge_recv"]
     assert recv_records

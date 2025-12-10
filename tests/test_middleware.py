@@ -95,6 +95,6 @@ def test_rewrite_prefers_fast_mechanism_on_critical_path():
     assert edge_map[("entry", "A")].strategy == "http"
     assert edge_map[("A", "C")].strategy == "http"
 
-    # Non-critical edges should be set to pubsub when topic exists.
-    assert edge_map[("entry", "B")].strategy == "pubsub"
-    assert edge_map[("B", "C")].strategy == "pubsub"
+    # Non-critical edges default to HTTP after optimization.
+    assert edge_map[("entry", "B")].strategy == "http"
+    assert edge_map[("B", "C")].strategy == "http"

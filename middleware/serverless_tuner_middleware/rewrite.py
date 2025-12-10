@@ -24,14 +24,13 @@ def _weight_for_edge(edge: WorkflowEdge, stats: Mapping[Tuple[str, str], StatSum
     pubsub = _mechanism_cost(key, "pubsub", stats)
 
     strat = edge.strategy.lower()
-    if strat == "http" and http is not None:
-        return http
+    # Treat dynamic as http by default (cost-efficient baseline).
     if strat == "pubsub" and pubsub is not None:
         return pubsub
-    if strat == "dynamic":
-        candidates = [c for c in (http, pubsub) if c is not None]
-        if candidates:
-            return min(candidates)
+    if http is not None:
+        return http
+    if pubsub is not None:
+        return pubsub
     return 0.0  # missing stats → treat as zero so we don't block path computation
 
 
@@ -51,6 +50,7 @@ def rewrite_config_for_critical_path(
     edges = list(config.edges)
 
     # Greedy: flip one edge on the current critical path at a time if it improves p50 latency.
+    # Start with dynamic treated as HTTP (cost baseline). Flips may change the critical path.
     max_iters = len(edges) or 1
     for _ in range(max_iters):
         edge_weights = {edge_key(e): _weight_for_edge(e, edge_stats) for e in edges}
@@ -102,7 +102,13 @@ def rewrite_config_for_critical_path(
 
         edges[best_idx] = replace(edges[best_idx], strategy=best_mech)
 
-    return WorkflowConfig(workflow_id=config.workflow_id, edges=edges)
+    # After optimization, normalize any remaining dynamic to HTTP (baseline).
+    updated_edges = [
+        replace(e, strategy="http") if e.strategy.lower() == "dynamic" else e
+        for e in edges
+    ]
+
+    return WorkflowConfig(workflow_id=config.workflow_id, edges=updated_edges)
 
 
 __all__ = [
