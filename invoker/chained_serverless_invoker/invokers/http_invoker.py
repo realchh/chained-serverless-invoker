@@ -4,8 +4,8 @@ from typing import Any, Callable, Optional
 
 import requests
 
-from invoker.chained_serverless_invoker.constants import DEFAULT_HTTP_MAX_WORKERS, DEFAULT_HTTP_REQUEST_TIMEOUT_SEC
-from invoker.chained_serverless_invoker.invokers.abstract_invoker import AbstractInvoker
+from chained_serverless_invoker.constants import DEFAULT_HTTP_MAX_WORKERS, DEFAULT_HTTP_REQUEST_TIMEOUT_SEC
+from chained_serverless_invoker.invokers.abstract_invoker import AbstractInvoker
 
 
 # Shared thread pool for all HTTP invocations

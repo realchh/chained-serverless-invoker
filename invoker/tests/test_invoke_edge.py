@@ -4,10 +4,10 @@ from unittest.mock import patch
 
 import pytest
 
-from invoker.chained_serverless_invoker import DynamicInvoker, InvocationMode
-from invoker.chained_serverless_invoker.client import bootstrap_from_request
-from invoker.chained_serverless_invoker.constants import DEFAULT_META_KEY
-from invoker.chained_serverless_invoker.invokers.types import EdgeConfig, InvokerMetadata
+from chained_serverless_invoker import DynamicInvoker, InvocationMode
+from chained_serverless_invoker.client import bootstrap_from_request
+from chained_serverless_invoker.constants import DEFAULT_META_KEY
+from chained_serverless_invoker.invokers.types import EdgeConfig, InvokerMetadata
 
 pytest_plugins = ["tests.conftest"]
 

@@ -111,7 +111,7 @@ We offer two types of invocation:
 
 ```python
 from google.cloud import pubsub_v1
-from invoker.chained_serverless_invoker.client import DynamicInvoker, InvocationMode
+from chained_serverless_invoker.client import DynamicInvoker, InvocationMode
 
 publisher = pubsub_v1.PublisherClient()
 
@@ -155,11 +155,11 @@ can reconstruct per-edge transport latency and the critical path.
 Example Cloud Run-style handler:
 
 ```python
-from invoker.chained_serverless_invoker.client import (
+from chained_serverless_invoker.client import (
   DynamicInvoker,
   bootstrap_from_request,
 )
-from invoker.chained_serverless_invoker.invokers.types import InvokerMetadata, EdgeConfig
+from chained_serverless_invoker.invokers.types import InvokerMetadata, EdgeConfig
 
 publisher = ...
 invoker = DynamicInvoker(pubsub_client=publisher, token_fetcher=fetch_token)

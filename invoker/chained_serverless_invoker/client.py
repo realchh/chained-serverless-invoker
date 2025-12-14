@@ -8,8 +8,8 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from .config import InvokerConfig
 from .constants import DEFAULT_META_KEY
-from .invokers import HttpInvoker, PubSubInvoker
-from .invokers.types import EdgeConfig, InvokerMetadata
+from chained_serverless_invoker.invokers import HttpInvoker, PubSubInvoker
+from chained_serverless_invoker.invokers.types import EdgeConfig, InvokerMetadata
 
 logger = logging.getLogger(__name__)
 
