@@ -1,4 +1,4 @@
-from .client import DynamicInvoker, InvocationMode
+from .client import DynamicInvoker, InvocationMode, bootstrap_from_request
 from .config import InvokerConfig
 
-__all__ = ["DynamicInvoker", "InvocationMode", "InvokerConfig"]
+__all__ = ["DynamicInvoker", "InvocationMode", "InvokerConfig", "bootstrap_from_request"]
