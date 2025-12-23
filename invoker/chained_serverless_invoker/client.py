@@ -92,15 +92,15 @@ class DynamicInvoker:
         if log_decision:
             mechanism = "http" if use_http else "pubsub"
             logger.info(
-                "invoker_invoke",
-                extra={
-                    "invoker": {
+                "invoker_invoke %s",
+                json.dumps(
+                    {
                         "mechanism": mechanism,
                         "mode": mode.name,
                         "ts_ms": int(time.time() * 1000),
                         "payload_size": payload_bytes,
                     }
-                },
+                ),
             )
 
         # Default fallback to Pub/Sub
@@ -174,9 +174,9 @@ class DynamicInvoker:
 
         # 5) Log SEND side
         logger.info(
-            "invoker_edge_send",
-            extra={
-                "invoker": {
+            "invoker_edge_send %s",
+            json.dumps(
+                {
                     "run_id": meta.run_id,
                     "taint": taint,
                     "from_fn": meta.fn_name,
@@ -186,7 +186,7 @@ class DynamicInvoker:
                     "ts_ms": send_start_ms,
                     "payload_size": len(payload_str),
                 }
-            },
+            ),
         )
 
         # 6) Delegate to the existing invoke(); mode is now FORCE_* so it won't re-decide
@@ -263,16 +263,16 @@ def bootstrap_from_request(request: Any, meta_key: str = DEFAULT_META_KEY) -> Tu
     edges = [EdgeConfig(**e) for e in meta_dict.get("edges", [])]
 
     logger.info(
-        "invoker_edge_recv",
-        extra={
-            "invoker": {
+        "invoker_edge_recv %s",
+        json.dumps(
+            {
                 "run_id": run_id,
                 "taint": taint,
                 "fn_name": fn_name,
                 "ts_ms": recv_start_ms,
                 "payload_size": len(raw_body) if raw_body else 0,
             }
-        },
+        ),
     )
 
     meta = InvokerMetadata(

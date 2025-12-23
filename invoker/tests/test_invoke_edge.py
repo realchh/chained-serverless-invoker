@@ -38,9 +38,9 @@ def test_edge_strategy_overrides_explicit_mode_pubsub(mock_pubsub_client, mock_t
     mock_pubsub_client.publish.assert_called_once()
     mock_post.assert_not_called()
 
-    send_logs = [r for r in caplog.records if r.message == "invoker_edge_send"]
+    send_logs = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
     assert send_logs
-    inv = send_logs[0].invoker
+    inv = json.loads(send_logs[0].message.split(" ", 1)[1])
     assert inv["edge_id"] == "A->worker"
     assert inv["mechanism"] == "pubsub"
     assert inv["from_fn"] == "A"
@@ -75,7 +75,7 @@ def test_metadata_injected_and_bootstrap_preserves_fields(mock_pubsub_client, mo
     assert meta_block["edges"]
     assert meta_block["taint"]
 
-    send_logs = [r for r in caplog.records if r.message == "invoker_edge_send"]
+    send_logs = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
     assert send_logs
 
     req_body = json.dumps(payload).encode("utf-8")
@@ -87,9 +87,9 @@ def test_metadata_injected_and_bootstrap_preserves_fields(mock_pubsub_client, mo
     assert recv_meta.run_id == "run-meta"
     assert recv_payload["value"] == 1
 
-    recv_logs = [r for r in caplog.records if r.message == "invoker_edge_recv"]
+    recv_logs = [r for r in caplog.records if r.message.startswith("invoker_edge_recv")]
     assert recv_logs
-    recv_inv = recv_logs[0].invoker
+    recv_inv = json.loads(recv_logs[0].message.split(" ", 1)[1])
     assert recv_inv["run_id"] == "run-meta"
     assert recv_inv["fn_name"] == "B"
     assert recv_inv["payload_size"] > 0

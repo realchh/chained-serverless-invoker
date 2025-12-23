@@ -120,11 +120,10 @@ def test_invoke_edge_http_forced_by_edge_strategy(mock_pubsub_client, mock_token
     assert isinstance(meta_block["edges"], list)
 
     # Logging: invoker_edge_send record with correct fields
-    send_records = [r for r in caplog.records if r.message == "invoker_edge_send"]
+    send_records = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
     assert send_records, "no invoker_edge_send log found"
 
-    rec = send_records[0]
-    inv = rec.invoker
+    inv = json.loads(send_records[0].message.split(" ", 1)[1])
     assert inv["run_id"] == "run-1"
     assert inv["from_fn"] == "A"
     assert inv["to_fn"] == "B"
@@ -173,9 +172,9 @@ def test_invoke_edge_dynamic_picks_pubsub_for_small_payload(mock_pubsub_client, 
         mock_pubsub_client.publish.assert_called_once()
         mock_post.assert_not_called()
 
-    send_records = [r for r in caplog.records if r.message == "invoker_edge_send"]
+    send_records = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
     assert send_records
-    inv = send_records[0].invoker
+    inv = json.loads(send_records[0].message.split(" ", 1)[1])
     assert inv["run_id"] == "run-2"
     assert inv["mechanism"] == "pubsub"
 
@@ -218,9 +217,9 @@ def test_bootstrap_from_request_reconstructs_metadata_and_logs(caplog):
     assert payload["x"] == 42
 
     # Logging: invoker_edge_recv record
-    recv_records = [r for r in caplog.records if r.message == "invoker_edge_recv"]
+    recv_records = [r for r in caplog.records if r.message.startswith("invoker_edge_recv")]
     assert recv_records
-    inv = recv_records[0].invoker
+    inv = json.loads(recv_records[0].message.split(" ", 1)[1])
     assert inv["run_id"] == "run-3"
     assert inv["taint"] == "t-123"
     assert inv["fn_name"] == "B"
@@ -260,5 +259,5 @@ def test_bootstrap_from_pubsub_event_base64(caplog):
     assert payload["pubsub_context"]["subscription"] == "sub-1"
     assert payload["pubsub_context"]["deliveryAttempt"] == 2
 
-    recv_records = [r for r in caplog.records if r.message == "invoker_edge_recv"]
+    recv_records = [r for r in caplog.records if r.message.startswith("invoker_edge_recv")]
     assert recv_records
