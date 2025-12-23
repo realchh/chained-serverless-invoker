@@ -233,6 +233,8 @@ def bootstrap_from_request(request: Any, meta_key: str = DEFAULT_META_KEY) -> Tu
             outer_payload = json.loads(raw_body)
         except json.JSONDecodeError:
             return None, {}
+    elif isinstance(request, dict):
+        outer_payload = request
 
     payload: Dict[str, Any] = {}
     pubsub_context: Dict[str, Any] = {}

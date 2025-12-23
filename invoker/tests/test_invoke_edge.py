@@ -2,14 +2,10 @@ import json
 import logging
 from unittest.mock import patch
 
-import pytest
-
 from chained_serverless_invoker import DynamicInvoker, InvocationMode
 from chained_serverless_invoker.client import bootstrap_from_request
 from chained_serverless_invoker.constants import DEFAULT_META_KEY
 from chained_serverless_invoker.invokers.types import EdgeConfig, InvokerMetadata
-
-pytest_plugins = ["tests.conftest"]
 
 
 def test_edge_strategy_overrides_explicit_mode_pubsub(mock_pubsub_client, mock_token_fetcher, caplog):
