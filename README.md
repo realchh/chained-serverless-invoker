@@ -37,6 +37,13 @@ pip install -e invoker -e middleware
 # CLI entry point (when installed): csi-middleware --help
 ```
 
+For local dev with Poetry:
+```bash
+cd invoker && poetry install --no-interaction --no-root
+cd ../middleware && poetry install --no-interaction --no-root
+# activate the Poetry venv or use `poetry run csi-middleware --help`
+```
+
 ## End-to-End: Invoker + Middleware (Step by Step)
 
 1) **Instrument your functions** with `DynamicInvoker` and `bootstrap_from_request` so send/recv logs include the `invoker` block (see example below).

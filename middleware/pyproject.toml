@@ -5,6 +5,7 @@ description = "Invoker for chained serverless applications in Google Cloud Run t
 license = "Apache-2.0"
 authors = ["Naufal Wibawa <naufal.rayhanwibawa@gmail.com>"]
 readme = "README.md"
+packages = [{ include = "serverless_tuner_middleware" }]
 
 [tool.poetry.dependencies]
 python = "^3.12"
