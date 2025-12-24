@@ -1,0 +1,76 @@
+[tool.poetry]
+name = "serverless-tuner-middleware"
+version = "0.1.0"
+description = "Invoker for chained serverless applications in Google Cloud Run that dynamically switches between using Pub/Sub and HTTP for inter-function communication method."
+license = "Apache-2.0"
+authors = ["Naufal Wibawa <naufal.rayhanwibawa@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+google-cloud-pubsub = "^2.33.0"
+requests = "^2.32.5"
+google-auth = "^2.43.0"
+matplotlib = "^3.0.0"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.1"
+pytest-cov = "^7.0.0"
+ruff = "^0.14.5"
+mypy = "^1.18.2"
+types-requests = "^2.32.4.20250913"
+google-cloud-pubsub = "^2.33.0"
+matplotlib = {version = "^3.9.2", optional = true}
+
+[tool.poetry.extras]
+plot = ["matplotlib"]
+
+[tool.ruff]
+# Same as Black.
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+line-length = 120
+indent-width = 4
+target-version = "py312"
+
+[tool.ruff.lint]
+# Enable:
+# E: pycodestyle errors
+# F: Pyflakes
+# I: isort (Import sorting)
+# B: flake8-bugbear (Common bugs)
+select = ["E", "F", "I", "B"]
+ignore = []
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "serverless_tuner_middleware"
+check_untyped_defs = true
+disallow_untyped_defs = true
+follow_imports = "skip"
+ignore_missing_imports = true
+pretty = true
+exclude = [
+    "tests"
+]
+
+[tool.poetry.scripts]
+format = "serverless_tuner_middleware.scripts:format_code"
+lint = "serverless_tuner_middleware.scripts:lint"
+typecheck = "serverless_tuner_middleware.scripts:check_types"
+check = "serverless_tuner_middleware.scripts:check_all"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

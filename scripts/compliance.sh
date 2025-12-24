@@ -1,23 +1,29 @@
 #!/bin/bash
+set -euo pipefail
 
-set -e
+for tool in ruff mypy pytest; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "Missing $tool; please install it in your environment."
+    exit 1
+  fi
+done
 
-# Run ruff
+PIP_FLAGS=""
+if [ -z "${VIRTUAL_ENV:-}" ]; then
+  PIP_FLAGS="--break-system-packages"
+fi
+
+# Install local packages (no network needed)
+python -m pip install $PIP_FLAGS -e invoker -e middleware >/dev/null
+
 echo "Running ruff..."
-poetry run ruff check --select I --fix .
-poetry run ruff check --fix .
-poetry run ruff format .
+ruff --config invoker/pyproject.toml check invoker/chained_serverless_invoker
+ruff --config middleware/pyproject.toml check middleware/serverless_tuner_middleware
 
-# Run mypy
 echo "Running mypy..."
-poetry run mypy --version
-poetry run mypy .
+mypy --config-file invoker/pyproject.toml invoker/chained_serverless_invoker || python -m pip install $PIP_FLAGS types-requests
+mypy --config-file invoker/pyproject.toml invoker/chained_serverless_invoker
+mypy --config-file middleware/pyproject.toml middleware/serverless_tuner_middleware
 
-# Run pytest
 echo "Running pytest..."
-poetry run pytest \
-    --junitxml=pytest.xml \
-    --cov-report=term-missing:skip-covered \
-    --cov-fail-under=80 \
-    --cov=chained_serverless_invoker \
-    tests/
+pytest

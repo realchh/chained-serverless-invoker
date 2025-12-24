@@ -25,3 +25,6 @@ PUBSUB_LATENCY_INTERCEPT = 0.2  # seconds (base overhead)
 # --- Pricing (USD) ---
 PRICE_PER_GB_EGRESS = 0.12
 PRICE_PER_PUBSUB_REQUEST = 0.0000004
+
+# --- Metadata Keys ---
+DEFAULT_META_KEY = "__invoker"

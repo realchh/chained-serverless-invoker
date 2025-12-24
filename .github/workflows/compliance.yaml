@@ -21,34 +21,13 @@ jobs:
       with:
         python-version: "3.12"
 
-    # 3. Install Poetry (using the official/standard action)
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
-      with:
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        installer-parallel: true
-
-    # 4. Load cached venv (Optional but makes builds much faster)
-    - name: Load cached venv
-      id: cached-poetry-dependencies
-      uses: actions/cache@v4
-      with:
-        path: .venv
-        key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-
-    # 5. Install dependencies (only if cache miss)
+    # 3. Install tools and local packages
     - name: Install dependencies
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root
-
-    # 6. Install the root project (so tests can import it)
-    - name: Install project
-      run: poetry install --no-interaction
-
-    # 7. Run your compliance script
-    # We chmod it just in case permissions were lost during git push
-    - name: Run Compliance Script
       run: |
-        chmod +x scripts/compliance.sh
-        ./scripts/compliance.sh
+        python -m pip install --upgrade pip
+        python -m pip install ruff mypy pytest types-requests
+        python -m pip install -e invoker -e middleware
+
+    # 4. Run compliance script (ruff, mypy, pytest)
+    - name: Run Compliance Script
+      run: bash scripts/compliance.sh
