@@ -21,6 +21,7 @@ ruff --config invoker/pyproject.toml check invoker/chained_serverless_invoker
 ruff --config middleware/pyproject.toml check middleware/serverless_tuner_middleware
 
 echo "Running mypy..."
+mypy --config-file invoker/pyproject.toml invoker/chained_serverless_invoker || python -m pip install $PIP_FLAGS types-requests
 mypy --config-file invoker/pyproject.toml invoker/chained_serverless_invoker
 mypy --config-file middleware/pyproject.toml middleware/serverless_tuner_middleware
 
