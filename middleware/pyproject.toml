@@ -70,6 +70,7 @@ format = "serverless_tuner_middleware.scripts:format_code"
 lint = "serverless_tuner_middleware.scripts:lint"
 typecheck = "serverless_tuner_middleware.scripts:check_types"
 check = "serverless_tuner_middleware.scripts:check_all"
+csi-middleware = "serverless_tuner_middleware.cli:main"
 
 [build-system]
 requires = ["poetry-core"]
