@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Iterable, List, Mapping, Tuple
 
 from .config import WorkflowConfig, WorkflowEdge
-from .stats import StatSummary
 from .dag.graph import EdgeDef, WorkflowDag
+from .stats import StatSummary
 
 
 def build_dag(config: WorkflowConfig) -> WorkflowDag:

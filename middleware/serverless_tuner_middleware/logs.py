@@ -72,8 +72,8 @@ def parse_events_from_lines(lines: Iterable[str]) -> Tuple[List[SendEvent], List
                     from_fn=str(from_fn),
                     to_fn=str(to_fn),
                     mechanism=str(mechanism),
-                    ts_ms=int(ts_ms),
-                    payload_size=int(payload_size),
+                    ts_ms=int(ts_ms),  # type: ignore[arg-type]
+                    payload_size=int(payload_size),  # type: ignore[arg-type]
                     edge_id=inv.get("edge_id"),
                 )
             )
@@ -92,8 +92,8 @@ def parse_events_from_lines(lines: Iterable[str]) -> Tuple[List[SendEvent], List
                     run_id=str(run_id),
                     taint=str(taint),
                     fn_name=str(fn_name),
-                    ts_ms=int(ts_ms),
-                    payload_size=int(payload_size),
+                    ts_ms=int(ts_ms),  # type: ignore[arg-type]
+                    payload_size=int(payload_size),  # type: ignore[arg-type]
                 )
             )
 

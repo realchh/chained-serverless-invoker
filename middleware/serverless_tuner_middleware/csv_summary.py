@@ -63,8 +63,13 @@ def summarize_directory(csv_dir: Path) -> Dict[Tuple[str, str, str, str], Dict[s
     for key, vals in metrics.items():
         if not vals:
             continue
-        summaries[key] = {f"p{p}": float(percentile(vals, p)) for p in PERCENTILES}
-        summaries[key]["count"] = len(vals)
+        stats: Dict[str, float] = {}
+        for p in PERCENTILES:
+            val = percentile(vals, p)
+            if val is not None:
+                stats[f"p{p}"] = float(val)
+        stats["count"] = len(vals)
+        summaries[key] = stats
     return summaries
 
 
@@ -132,7 +137,7 @@ def plot_scenarios(csv_dir: Path, output_prefix: Path) -> None:
         groups = {label: _trim(vals) for label, vals in groups.items() if vals}
 
         labels = sorted(groups.keys())
-        data = [groups[l] for l in labels]
+        data = [groups[label] for label in labels]
 
         plt.figure(figsize=(max(8, len(labels) * 0.5), 5))
         plt.boxplot(data, labels=labels, showfliers=True)
@@ -241,8 +246,8 @@ def plot_modes(csv_dir: Path, output_prefix: Path, modes: List[str]) -> None:
             for region in regions:
                 scenarios = grouped[mech].get(region, {})
                 labels = sorted(scenarios.keys())
-                data = [scenarios[l] for l in labels if scenarios[l]]
-                labels = [l for l in labels if scenarios[l]]
+                data = [scenarios[label] for label in labels if scenarios[label]]
+                labels = [label for label in labels if scenarios[label]]
                 if not data:
                     continue
 
@@ -308,10 +313,10 @@ def plot_modes(csv_dir: Path, output_prefix: Path, modes: List[str]) -> None:
                     if not vals:
                         continue
                     size_label, rate_label = label.split("-", 1)
-                    x = _parse_size_kb(size_label)
+                    size_val = _parse_size_kb(size_label)
                     rate = _parse_rate(rate_label)
                     for v in vals:
-                        points.append((x, rate, v))
+                        points.append((size_val, rate, v))
                 if not points:
                     continue
 
@@ -362,10 +367,10 @@ def plot_modes(csv_dir: Path, output_prefix: Path, modes: List[str]) -> None:
                     if not vals:
                         continue
                     size_label, rate_label = label.split("-", 1)
-                    x = _parse_size_kb(size_label)
+                    size_val = _parse_size_kb(size_label)
                     rate = _parse_rate(rate_label)
                     for v in vals:
-                        points.append((x, rate, v))
+                        points.append((size_val, rate, v))
                 if not points:
                     continue
 

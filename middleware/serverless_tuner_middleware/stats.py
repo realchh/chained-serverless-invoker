@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from statistics import mean
-from typing import Dict, Iterable, List, Mapping, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 from .logs import RecvEvent, SendEvent
 

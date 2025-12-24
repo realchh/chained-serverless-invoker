@@ -206,7 +206,7 @@ class WorkflowDag:
 
         # Reconstruct node path
         path: List[str] = []
-        cur = best_sink
+        cur: Optional[str] = best_sink
         while cur is not None:
             path.append(cur)
             cur = pred[cur]

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
-from typing import Iterable, Optional
-
+from typing import Optional
 
 TOTAL_FIELDS = [
     "end_to_end_latency_ms",

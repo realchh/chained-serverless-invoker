@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Dict, Mapping, Tuple
 
-from .config import WorkflowConfig, WorkflowEdge, dump_config, load_config
 from . import constants
+from .config import WorkflowConfig, WorkflowEdge, dump_config, load_config
 from .critical_path import build_dag, critical_path_from_stats, edge_key
 from .stats import StatSummary
 
@@ -14,7 +14,9 @@ def _mechanism_cost(edge_key_str: str, mechanism: str, stats: Mapping[Tuple[str,
     return summary.p50 if summary else None
 
 
-def _edge_cost_for_strategy(edge: WorkflowEdge, strategy: str, stats: Mapping[Tuple[str, str], StatSummary]) -> float | None:
+def _edge_cost_for_strategy(
+    edge: WorkflowEdge, strategy: str, stats: Mapping[Tuple[str, str], StatSummary]
+) -> float | None:
     return _mechanism_cost(edge_key(edge), strategy.lower(), stats)
 
 
@@ -80,14 +82,16 @@ def rewrite_config_for_critical_path(
             # Identify the fastest available mechanism for this edge.
             http_cost = _mechanism_cost(edge_key(edge), "http", edge_stats)
             pubsub_cost = _mechanism_cost(edge_key(edge), "pubsub", edge_stats)
-            candidates = [(http_cost, "http"), (pubsub_cost, "pubsub")]
-            candidates = [(c, m) for c, m in candidates if c is not None]
-            best_pair = min(candidates, default=None, key=lambda x: x[0])
+            pairs: list[tuple[float, str]] = []
+            if http_cost is not None:
+                pairs.append((http_cost, "http"))
+            if pubsub_cost is not None:
+                pairs.append((pubsub_cost, "pubsub"))
 
-            if best_pair:
-                best_cost, fastest_mech = best_pair
+            if pairs:
+                best_cost, fastest_mech = min(pairs, key=lambda x: x[0])
                 if fastest_mech != current_mech:
-                    gain = (current_cost or best_cost) - best_cost
+                    gain = (current_cost if current_cost is not None else best_cost) - best_cost
                     # If current is dynamic, allow a zero-gain flip to make it explicit.
                     if current_mech == "dynamic" and gain <= 0:
                         gain = constants.GAIN_THRESHOLD_MS + 0.001
@@ -103,10 +107,7 @@ def rewrite_config_for_critical_path(
         edges[best_idx] = replace(edges[best_idx], strategy=best_mech)
 
     # After optimization, normalize any remaining dynamic to HTTP (baseline).
-    updated_edges = [
-        replace(e, strategy="http") if e.strategy.lower() == "dynamic" else e
-        for e in edges
-    ]
+    updated_edges = [replace(e, strategy="http") if e.strategy.lower() == "dynamic" else e for e in edges]
 
     return WorkflowConfig(workflow_id=config.workflow_id, edges=updated_edges)
 

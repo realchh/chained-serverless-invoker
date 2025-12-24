@@ -200,7 +200,9 @@ class DynamicInvoker:
         )
 
 
-def bootstrap_from_request(request: Any, meta_key: str = DEFAULT_META_KEY) -> Tuple[Optional[InvokerMetadata], Dict[str, Any]]:
+def bootstrap_from_request(
+    request: Any, meta_key: str = DEFAULT_META_KEY
+) -> Tuple[Optional[InvokerMetadata], Dict[str, Any]]:
     """
     Parse incoming request/event payload for DAG metadata.
 
@@ -225,7 +227,8 @@ def bootstrap_from_request(request: Any, meta_key: str = DEFAULT_META_KEY) -> Tu
         try:
             raw_body = base64.b64decode(raw_body)
         except Exception:
-            raw_body = raw_body.encode("utf-8", errors="ignore")
+            raw_body_str = raw_body  # type: ignore[assignment]
+            raw_body = raw_body_str.encode("utf-8", errors="ignore")  # type: ignore[union-attr]
 
     outer_payload: Dict[str, Any] = {}
     if raw_body:
