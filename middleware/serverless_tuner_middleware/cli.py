@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from serverless_tuner_middleware.config import dump_config, load_config
-from serverless_tuner_middleware.logs import parse_events_from_lines
-from serverless_tuner_middleware.rewrite import rewrite_config_for_critical_path
-from serverless_tuner_middleware.stats import (
+from .config import dump_config, load_config
+from .logs import parse_events_from_lines
+from .rewrite import rewrite_config_for_critical_path
+from .stats import (
     aggregate_edge_stats,
     aggregate_node_stats,
     compute_edge_samples,
