@@ -1,0 +1,45 @@
+{
+  "workflow_id": "text_2_speech_censoring-0.1.1",
+  "edges": [
+    {
+      "from_fn": "get_input",
+      "to_fn": "text_2_speech",
+      "strategy": "http",
+      "endpoint": "https://text-ring-0-1-1-text-eech-gcp-us-ea1-6914bea4f41a-809845967121.us-east1.run.app",
+      "topic": "projects/caribou-460422/topics/text-ring-0-1-1-text-eech-gcp-us-ea1-6914bea4f41a_messaging_topic",
+      "edge_id": "get_input:entry_point:0->text_2_speech:get_input_0_0:1"
+    },
+    {
+      "from_fn": "get_input",
+      "to_fn": "profanity",
+      "strategy": "pubsub",
+      "endpoint": "https://text-ring-0-1-1-prof-nity-gcp-us-ea1-3ef3c06d4695-809845967121.us-east1.run.app",
+      "topic": "projects/caribou-460422/topics/text-ring-0-1-1-prof-nity-gcp-us-ea1-3ef3c06d4695_messaging_topic",
+      "edge_id": "get_input:entry_point:0->profanity:get_input_0_1:2"
+    },
+    {
+      "from_fn": "text_2_speech",
+      "to_fn": "encoding",
+      "strategy": "http",
+      "endpoint": "https://text-ring-0-1-1-enco-ding-gcp-us-ea1-3d25cdfd6dac-809845967121.us-east1.run.app",
+      "topic": "projects/caribou-460422/topics/text-ring-0-1-1-enco-ding-gcp-us-ea1-3d25cdfd6dac_messaging_topic",
+      "edge_id": "text_2_speech:get_input_0_0:1->encoding:text_2_speech_1_0:3"
+    },
+    {
+      "from_fn": "profanity",
+      "to_fn": "censor",
+      "strategy": "http",
+      "endpoint": "https://text-ring-0-1-1-cens-nsor-gcp-us-ea1-cc4feee82673-809845967121.us-east1.run.app",
+      "topic": "projects/caribou-460422/topics/text-ring-0-1-1-cens-nsor-gcp-us-ea1-cc4feee82673_messaging_topic",
+      "edge_id": "profanity:get_input_0_1:2->censor:sync:"
+    },
+    {
+      "from_fn": "encoding",
+      "to_fn": "censor",
+      "strategy": "http",
+      "endpoint": "https://text-ring-0-1-1-cens-nsor-gcp-us-ea1-cc4feee82673-809845967121.us-east1.run.app",
+      "topic": "projects/caribou-460422/topics/text-ring-0-1-1-cens-nsor-gcp-us-ea1-cc4feee82673_messaging_topic",
+      "edge_id": "encoding:text_2_speech_1_0:3->censor:sync:"
+    }
+  ]
+}

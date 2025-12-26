@@ -5,10 +5,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Tuple
 
-from .config import dump_config, load_config
+from .config import dump_config, load_config, WorkflowEdge, WorkflowConfig
 from .critical_path import edge_key
 from .logs import parse_events_from_lines
 from .rewrite import rewrite_config_for_critical_path, _infer_region_pair
+from .model import REGRESSION_MODEL
 from .stats import (
     aggregate_edge_stats,
     aggregate_node_stats,
@@ -22,6 +23,12 @@ def main() -> None:
     parser.add_argument("--logs", required=True, help="Path to NDJSON log file containing invoker_edge_send/recv.")
     parser.add_argument("--config-in", required=True, help="Path to existing workflow config JSON.")
     parser.add_argument("--config-out", required=True, help="Path to write the rewritten workflow config JSON.")
+    parser.add_argument(
+        "--mode",
+        choices=["critical-path", "fastest-model"],
+        default="critical-path",
+        help="Rewrite strategy: critical-path greedy (default) or fastest per edge using model predictions.",
+    )
 
     args = parser.parse_args()
 
@@ -53,12 +60,44 @@ def main() -> None:
         region = _infer_region_pair(e)
         edge_context[key] = (region, avg_payload, rate_rps)
 
-    rewritten = rewrite_config_for_critical_path(
-        config,
-        edge_stats=edge_stats,
-        node_stats=node_stats,
-        edge_context=edge_context,
-    )
+    if args.mode == "fastest-model":
+        # Choose the fastest predicted mechanism per edge (ignoring critical path).
+        new_edges = []
+        for e in config.edges:
+            ctx = edge_context.get(edge_key(e))
+            region = ctx[0] if ctx else None
+            size_bytes = ctx[1] if ctx else None
+            rate_rps = ctx[2] if ctx else None
+
+            preds = {}
+            if region and size_bytes is not None and rate_rps is not None:
+                for mech in ("http", "pubsub"):
+                    preds[mech] = REGRESSION_MODEL.predict(
+                        mech, region, "p50", payload_bytes=size_bytes, rate_rps=rate_rps
+                    )
+
+            if preds and any(v is not None for v in preds.values()):
+                best_mech = min((m for m, v in preds.items() if v is not None), key=lambda m: preds[m])  # type: ignore[arg-type]
+                new_edges.append(
+                    WorkflowEdge(
+                        from_fn=e.from_fn,
+                        to_fn=e.to_fn,
+                        strategy=best_mech,
+                        endpoint=e.endpoint,
+                        topic=e.topic,
+                        edge_id=e.edge_id,
+                    )
+                )
+            else:
+                new_edges.append(e)
+        rewritten = WorkflowConfig(workflow_id=config.workflow_id, edges=new_edges)
+    else:
+        rewritten = rewrite_config_for_critical_path(
+            config,
+            edge_stats=edge_stats,
+            node_stats=node_stats,
+            edge_context=edge_context,
+        )
     dump_config(rewritten, args.config_out)
 
     print(f"Wrote updated config to {args.config_out}")

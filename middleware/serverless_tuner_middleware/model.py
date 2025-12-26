@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import csv
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -155,11 +156,31 @@ def fit_regression_model(csv_dir: Path, quantiles: Iterable[str] = ("p50", "p90"
     """
     Fit a regression model per mechanism/region/quantile from benchmark CSVs.
     """
-    raw = _load_raw(csv_dir)
-    scenarios: Dict[Tuple[str, str, str, str], List[float]] = {}
-    for mech, region, size_label, rate_label, latency in raw:
-        key = (mech, region, size_label, rate_label)
-        scenarios.setdefault(key, []).append(latency)
+    unified_path = csv_dir / "latency_samples.csv"
+    scenarios: Dict[Tuple[str, str], List[Tuple[float, float, float]]] = {}
+    if unified_path.exists():
+        with unified_path.open() as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                mech = row.get("mechanism")
+                region = row.get("region_pair")
+                try:
+                    size_bytes = float(row.get("message_size_bytes", 0))
+                    rate_rps = float(row.get("rate_rps", 0))
+                    latency = float(row.get("end_to_end_latency_ms", 0))
+                except (TypeError, ValueError):
+                    continue
+                if not mech or not region:
+                    continue
+                scenarios.setdefault((mech, region), []).append((size_bytes, rate_rps, latency))
+    else:
+        raw = _load_raw(csv_dir)
+        for mech, region, size_label, rate_label, latency in raw:
+            payload_kb = _parse_size_kb(size_label)
+            rate = _parse_rate(rate_label)
+            if payload_kb <= 0:
+                continue
+            scenarios.setdefault((mech, region), []).append((payload_kb * 1024.0, rate, latency))
 
     coeffs: Dict[Tuple[str, str, str], Coeffs] = {}
     k_grid = [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]
@@ -167,18 +188,17 @@ def fit_regression_model(csv_dir: Path, quantiles: Iterable[str] = ("p50", "p90"
     for quantile in quantiles:
         q_pct = float(quantile.replace("p", ""))
         bucketed: Dict[Tuple[str, str], List[Tuple[float, float, float]]] = {}
-        for (mech, region, size_label, rate_label), vals in scenarios.items():
-            trimmed = _trim(vals)
+        for (mech, region), vals in scenarios.items():
+            latencies = [v[2] for v in vals]
+            trimmed = _trim(latencies)
             if not trimmed:
                 continue
             latency_q = percentile(trimmed, q_pct)
             if latency_q is None:
                 continue
-            payload_kb = _parse_size_kb(size_label)
-            rate = _parse_rate(rate_label)
-            if payload_kb <= 0.0:
-                continue
-            bucketed.setdefault((mech, region), []).append((payload_kb * 1024.0, rate, latency_q))
+            size_median = percentile([v[0] for v in vals], 50) or 0.0
+            rate_median = percentile([v[1] for v in vals], 50) or 0.0
+            bucketed.setdefault((mech, region), []).append((size_median, rate_median, latency_q))
 
         for (mech, region), samples in bucketed.items():
             if len(samples) < 2:
