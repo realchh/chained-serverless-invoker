@@ -22,6 +22,23 @@ def _edge_cost_for_strategy(
     return _mechanism_cost(edge_key(edge), strategy.lower(), stats)
 
 
+def _mechanism_cost_or_model(
+    edge: WorkflowEdge,
+    mechanism: str,
+    stats: Mapping[Tuple[str, str], StatSummary],
+    *,
+    region_pair: str | None,
+    payload_size_bytes: int | None,
+    rate_rps: float | None,
+) -> float | None:
+    cost = _mechanism_cost(edge_key(edge), mechanism, stats)
+    if cost is not None:
+        return cost
+    if region_pair and payload_size_bytes is not None and rate_rps is not None:
+        return _model_predict(mechanism, region_pair, payload_size_bytes, rate_rps)
+    return None
+
+
 def _model_predict(
     mechanism: str, region_pair: str, payload_size_bytes: int, rate_rps: float, quantile: str = "p50"
 ) -> float | None:
@@ -111,14 +128,24 @@ def rewrite_config_for_critical_path(
 
             edge = edges[idx]
             current_mech = edge.strategy.lower()
-            current_cost = _edge_cost_for_strategy(edge, current_mech, edge_stats)
-            # If dynamic or missing, fall back to the best known cost for this edge.
+            ctx = edge_context.get(edge_key(edge)) if edge_context else None
+            region = ctx[0] if ctx else None
+            size_bytes = ctx[1] if ctx else None
+            rate_rps = ctx[2] if ctx else None
+
+            current_cost = _mechanism_cost_or_model(
+                edge, current_mech, edge_stats, region_pair=region, payload_size_bytes=size_bytes, rate_rps=rate_rps
+            )
             if current_cost is None:
-                current_cost = _weight_for_edge(edge, edge_stats)
+                current_cost = _weight_for_edge(edge, edge_stats, region_pair=region, payload_size_bytes=size_bytes, rate_rps=rate_rps)
 
             # Identify the fastest available mechanism for this edge.
-            http_cost = _mechanism_cost(edge_key(edge), "http", edge_stats)
-            pubsub_cost = _mechanism_cost(edge_key(edge), "pubsub", edge_stats)
+            http_cost = _mechanism_cost_or_model(
+                edge, "http", edge_stats, region_pair=region, payload_size_bytes=size_bytes, rate_rps=rate_rps
+            )
+            pubsub_cost = _mechanism_cost_or_model(
+                edge, "pubsub", edge_stats, region_pair=region, payload_size_bytes=size_bytes, rate_rps=rate_rps
+            )
             pairs: list[tuple[float, str]] = []
             if http_cost is not None:
                 pairs.append((http_cost, "http"))
