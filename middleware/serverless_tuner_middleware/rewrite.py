@@ -6,6 +6,7 @@ from typing import Dict, Mapping, Tuple
 from . import constants
 from .config import WorkflowConfig, WorkflowEdge, dump_config, load_config
 from .critical_path import build_dag, critical_path_from_stats, edge_key
+from .model import REGRESSION_MODEL
 from .stats import StatSummary
 
 
@@ -20,7 +21,22 @@ def _edge_cost_for_strategy(
     return _mechanism_cost(edge_key(edge), strategy.lower(), stats)
 
 
-def _weight_for_edge(edge: WorkflowEdge, stats: Mapping[Tuple[str, str], StatSummary]) -> float:
+def _model_predict(
+    mechanism: str, region_pair: str, payload_size_bytes: int, rate_rps: float, quantile: str = "p50"
+) -> float | None:
+    return REGRESSION_MODEL.predict(
+        mechanism=mechanism, region_pair=region_pair, quantile=quantile, payload_bytes=payload_size_bytes, rate_rps=rate_rps
+    )
+
+
+def _weight_for_edge(
+    edge: WorkflowEdge,
+    stats: Mapping[Tuple[str, str], StatSummary],
+    *,
+    region_pair: str | None = None,
+    payload_size_bytes: int | None = None,
+    rate_rps: float | None = None,
+) -> float:
     key = edge_key(edge)
     http = _mechanism_cost(key, "http", stats)
     pubsub = _mechanism_cost(key, "pubsub", stats)
@@ -33,6 +49,12 @@ def _weight_for_edge(edge: WorkflowEdge, stats: Mapping[Tuple[str, str], StatSum
         return http
     if pubsub is not None:
         return pubsub
+    if region_pair and payload_size_bytes is not None and rate_rps is not None:
+        base_http = _model_predict("http", region_pair, payload_size_bytes, rate_rps)
+        base_pubsub = _model_predict("pubsub", region_pair, payload_size_bytes, rate_rps)
+        candidates = [c for c in (base_http, base_pubsub) if c is not None]
+        if candidates:
+            return min(candidates)
     return 0.0  # missing stats → treat as zero so we don't block path computation
 
 
@@ -45,6 +67,7 @@ def rewrite_config_for_critical_path(
     *,
     edge_stats: Mapping[Tuple[str, str], StatSummary],
     node_stats: Mapping[str, StatSummary] | None = None,
+    edge_context: Mapping[str, Tuple[str, int, float]] | None = None,
 ) -> WorkflowConfig:
     # TODO: incorporate cost-aware scores (latency + \$) once pricing signals are available.
     dag = build_dag(config)
@@ -55,7 +78,15 @@ def rewrite_config_for_critical_path(
     # Start with dynamic treated as HTTP (cost baseline). Flips may change the critical path.
     max_iters = len(edges) or 1
     for _ in range(max_iters):
-        edge_weights = {edge_key(e): _weight_for_edge(e, edge_stats) for e in edges}
+        edge_weights = {}
+        for e in edges:
+            ctx = edge_context.get(edge_key(e)) if edge_context else None
+            region = ctx[0] if ctx else None
+            size_bytes = ctx[1] if ctx else None
+            rate_rps = ctx[2] if ctx else None
+            edge_weights[edge_key(e)] = _weight_for_edge(
+                e, edge_stats, region_pair=region, payload_size_bytes=size_bytes, rate_rps=rate_rps
+            )
         _, path_nodes = critical_path_from_stats(dag, edge_stats=edge_weights, node_stats=node_weights)
         if len(path_nodes) < 2:
             break
