@@ -123,7 +123,10 @@ class DynamicInvoker:
         meta_key: str = DEFAULT_META_KEY,
         **kwargs: Any,
     ) -> Any:
-        edge = next((e for e in meta.edges if e.to == target_fn), None)
+        # Prefer edges whose source matches the current function, but keep the full DAG untouched for downstream nodes.
+        candidate_edges = [e for e in meta.edges if not getattr(e, "from_fn", None) or e.from_fn == meta.fn_name]
+        search_edges = candidate_edges or meta.edges
+        edge = next((e for e in search_edges if e.to == target_fn), None)
 
         # 1) Use static edge strategy if provided
         if edge:

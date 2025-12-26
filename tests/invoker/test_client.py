@@ -179,6 +179,46 @@ def test_invoke_edge_dynamic_picks_pubsub_for_small_payload(mock_pubsub_client, 
     assert inv["mechanism"] == "pubsub"
 
 
+def test_invoke_edge_prefers_matching_from_fn(mock_pubsub_client, mock_token_fetcher, caplog):
+    """When multiple edges share a target, pick the one whose source matches the current fn."""
+    caplog.set_level(logging.INFO, logger="chained_serverless_invoker.client")
+
+    invoker = DynamicInvoker(mock_pubsub_client, mock_token_fetcher)
+
+    edges = [
+        EdgeConfig(
+            from_fn="profanity",
+            to="censor",
+            strategy="http",
+            endpoint="https://censor",
+            edge_id="profanity->censor",
+        ),
+        EdgeConfig(
+            from_fn="encoding",
+            to="censor",
+            strategy="http",
+            endpoint="https://censor",
+            edge_id="encoding->censor",
+        ),
+    ]
+    meta = InvokerMetadata(fn_name="encoding", run_id="run-edge-select", taint="t", edges=edges)
+    payload: dict[str, object] = {}
+
+    with patch("chained_serverless_invoker.invokers.http_invoker.requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+
+        fut = invoker.invoke_edge(meta, target_fn="censor", payload=payload)
+        fut.result()
+
+    mock_post.assert_called_once()
+
+    send_records = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
+    assert send_records
+    inv = json.loads(send_records[0].message.split(" ", 1)[1])
+    assert inv["edge_id"] == "encoding->censor"
+    assert inv["from_fn"] == "encoding"
+
+
 class DummyRequest:
     def __init__(self, body: bytes):
         self._body = body
