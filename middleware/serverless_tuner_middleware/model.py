@@ -22,6 +22,12 @@ class RegressionModel:
 
     coeffs: Dict[Tuple[str, str, str], Coeffs]
 
+    def _normalize_region_pair(self, region_pair: str) -> str:
+        left, _, right = region_pair.partition("->")
+        left = _REGION_ALIAS.get(left, left)
+        right = _REGION_ALIAS.get(right, right)
+        return f"{left}->{right}"
+
     def predict(
         self,
         mechanism: str,
@@ -31,6 +37,7 @@ class RegressionModel:
         payload_bytes: int,
         rate_rps: float,
     ) -> float | None:
+        region_pair = self._normalize_region_pair(region_pair)
         key = (mechanism.lower(), region_pair, quantile.lower())
         coeff = self.coeffs.get(key)
         if not coeff:
@@ -197,5 +204,13 @@ def load_default_model() -> RegressionModel:
 
 
 REGRESSION_MODEL = load_default_model()
+
+_REGION_ALIAS = {
+    "us-east1": "ea1",
+    "us-west1": "we1",
+    "us-west2": "we2",
+    "northamerica-northeast1": "nne1",
+    # extend as more benchmark data is added
+}
 
 __all__ = ["RegressionModel", "Coeffs", "fit_regression_model", "REGRESSION_MODEL"]

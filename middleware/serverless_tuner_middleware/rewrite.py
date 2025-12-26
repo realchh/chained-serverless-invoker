@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import re
 from typing import Dict, Mapping, Tuple
 
 from . import constants
@@ -49,6 +50,11 @@ def _weight_for_edge(
         return http
     if pubsub is not None:
         return pubsub
+
+    # Try to infer region pair from the target endpoint when not provided.
+    if region_pair is None:
+        region_pair = _infer_region_pair(edge)
+
     if region_pair and payload_size_bytes is not None and rate_rps is not None:
         base_http = _model_predict("http", region_pair, payload_size_bytes, rate_rps)
         base_pubsub = _model_predict("pubsub", region_pair, payload_size_bytes, rate_rps)
@@ -141,6 +147,23 @@ def rewrite_config_for_critical_path(
     updated_edges = [replace(e, strategy="http") if e.strategy.lower() == "dynamic" else e for e in edges]
 
     return WorkflowConfig(workflow_id=config.workflow_id, edges=updated_edges)
+
+
+_REGION_RE = re.compile(r"\b([a-z]+-[a-z0-9]+[0-9])\.run\.app")
+
+
+def _infer_region_pair(edge: WorkflowEdge) -> str | None:
+    """
+    Best-effort region-pair inference from the target endpoint hostname.
+    If only one region is found, assume src=dst.
+    """
+    if not edge.endpoint:
+        return None
+    match = _REGION_RE.search(edge.endpoint)
+    if not match:
+        return None
+    region = match.group(1)
+    return f"{region}->{region}"
 
 
 __all__ = [

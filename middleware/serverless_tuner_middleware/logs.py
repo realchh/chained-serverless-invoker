@@ -50,6 +50,17 @@ def parse_events_from_lines(lines: Iterable[str]) -> Tuple[List[SendEvent], List
 
         message = record.get("message") or record.get("msg")
         inv = record.get("invoker") or {}
+        # Cloud Run stdout lines often stash the payload under textPayload: "invoker_edge_send {...}"
+        if not message and isinstance(record.get("textPayload"), str):
+            text = record["textPayload"]
+            if text.startswith("invoker_edge_send ") or text.startswith("invoker_edge_recv "):
+                parts = text.split(" ", 1)
+                if len(parts) == 2:
+                    message = parts[0]
+                    try:
+                        inv = json.loads(parts[1])
+                    except json.JSONDecodeError:
+                        inv = {}
         if not isinstance(inv, dict):
             continue
 
