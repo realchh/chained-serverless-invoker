@@ -24,10 +24,8 @@ class RegressionModel:
     coeffs: Dict[Tuple[str, str, str], Coeffs]
 
     def _normalize_region_pair(self, region_pair: str) -> str:
-        left, _, right = region_pair.partition("->")
-        left = _REGION_ALIAS.get(left, left)
-        right = _REGION_ALIAS.get(right, right)
-        return f"{left}->{right}"
+        # Keep full region names (e.g., us-east1->us-east1) to match the unified samples.
+        return region_pair
 
     def predict(
         self,
@@ -157,7 +155,7 @@ def fit_regression_model(csv_dir: Path, quantiles: Iterable[str] = ("p50", "p90"
     Fit a regression model per mechanism/region/quantile from benchmark CSVs.
     """
     unified_path = csv_dir / "latency_samples.csv"
-    scenarios: Dict[Tuple[str, str], List[Tuple[float, float, float]]] = {}
+    scenarios: Dict[Tuple[str, str, float, float], List[float]] = {}
     if unified_path.exists():
         with unified_path.open() as f:
             reader = csv.DictReader(f)
@@ -170,9 +168,9 @@ def fit_regression_model(csv_dir: Path, quantiles: Iterable[str] = ("p50", "p90"
                     latency = float(row.get("end_to_end_latency_ms", 0))
                 except (TypeError, ValueError):
                     continue
-                if not mech or not region:
+                if not mech or not region or size_bytes <= 0:
                     continue
-                scenarios.setdefault((mech, region), []).append((size_bytes, rate_rps, latency))
+                scenarios.setdefault((mech, region, size_bytes, rate_rps), []).append(latency)
     else:
         raw = _load_raw(csv_dir)
         for mech, region, size_label, rate_label, latency in raw:
@@ -180,7 +178,8 @@ def fit_regression_model(csv_dir: Path, quantiles: Iterable[str] = ("p50", "p90"
             rate = _parse_rate(rate_label)
             if payload_kb <= 0:
                 continue
-            scenarios.setdefault((mech, region), []).append((payload_kb * 1024.0, rate, latency))
+            size_bytes = payload_kb * 1024.0
+            scenarios.setdefault((mech, region, size_bytes, rate), []).append(latency)
 
     coeffs: Dict[Tuple[str, str, str], Coeffs] = {}
     k_grid = [0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]
@@ -188,17 +187,14 @@ def fit_regression_model(csv_dir: Path, quantiles: Iterable[str] = ("p50", "p90"
     for quantile in quantiles:
         q_pct = float(quantile.replace("p", ""))
         bucketed: Dict[Tuple[str, str], List[Tuple[float, float, float]]] = {}
-        for (mech, region), vals in scenarios.items():
-            latencies = [v[2] for v in vals]
-            trimmed = _trim(latencies)
+        for (mech, region, size_bytes, rate_rps), lat_list in scenarios.items():
+            trimmed = _trim(lat_list)
             if not trimmed:
                 continue
             latency_q = percentile(trimmed, q_pct)
             if latency_q is None:
                 continue
-            size_median = percentile([v[0] for v in vals], 50) or 0.0
-            rate_median = percentile([v[1] for v in vals], 50) or 0.0
-            bucketed.setdefault((mech, region), []).append((size_median, rate_median, latency_q))
+            bucketed.setdefault((mech, region), []).append((size_bytes, rate_rps, latency_q))
 
         for (mech, region), samples in bucketed.items():
             if len(samples) < 2:
@@ -224,13 +220,5 @@ def load_default_model() -> RegressionModel:
 
 
 REGRESSION_MODEL = load_default_model()
-
-_REGION_ALIAS = {
-    "us-east1": "ea1",
-    "us-west1": "we1",
-    "us-west2": "we2",
-    "northamerica-northeast1": "nne1",
-    # extend as more benchmark data is added
-}
 
 __all__ = ["RegressionModel", "Coeffs", "fit_regression_model", "REGRESSION_MODEL"]
