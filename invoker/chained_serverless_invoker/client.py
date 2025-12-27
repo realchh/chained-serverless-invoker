@@ -123,9 +123,19 @@ class DynamicInvoker:
         meta_key: str = DEFAULT_META_KEY,
         **kwargs: Any,
     ) -> Any:
-        # Prefer edges whose source matches the current function, but keep the full DAG untouched for downstream nodes.
-        candidate_edges = [e for e in meta.edges if not getattr(e, "from_fn", None) or e.from_fn == meta.fn_name]
-        search_edges = candidate_edges or meta.edges
+        # Prefer edges whose source matches the current function (by explicit from_fn or by edge_id prefix),
+        # but keep the full DAG untouched for downstream nodes.
+        def _matches_source(e: EdgeConfig) -> bool:
+            src = getattr(e, "from_fn", None)
+            if src:
+                return src == meta.fn_name
+            if e.edge_id:
+                # Heuristic: edge_id often encodes "<from>:...-><to>:..."
+                return e.edge_id.startswith(f"{meta.fn_name}:")
+            return False
+
+        preferred_edges = [e for e in meta.edges if _matches_source(e)]
+        search_edges = preferred_edges or meta.edges
         edge = next((e for e in search_edges if e.to == target_fn), None)
 
         # 1) Use static edge strategy if provided
