@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import csv
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from .csv_summary import _load_raw, _parse_rate, _parse_size_kb, _trim, percentile
 
@@ -70,7 +70,7 @@ def _solve_linear(features: List[List[float]], targets: List[float], ridge: floa
     # Build normal equations with a tiny ridge term for stability.
     A = [[0.0 for _ in range(n)] for _ in range(n)]
     b = [0.0 for _ in range(n)]
-    for x, y in zip(features, targets):
+    for x, y in zip(features, targets, strict=False):
         for i in range(n):
             b[i] += x[i] * y
             for j in range(n):

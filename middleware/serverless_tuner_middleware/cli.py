@@ -5,11 +5,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Tuple
 
-from .config import dump_config, load_config, WorkflowEdge, WorkflowConfig
+from .config import WorkflowConfig, WorkflowEdge, dump_config, load_config
 from .critical_path import edge_key
 from .logs import parse_events_from_lines
-from .rewrite import rewrite_config_for_critical_path, _infer_region_pair
 from .model import REGRESSION_MODEL
+from .rewrite import _infer_region_pair, rewrite_config_for_critical_path
 from .stats import (
     aggregate_edge_stats,
     aggregate_node_stats,
@@ -45,8 +45,8 @@ def main() -> None:
     payloads: Dict[str, list[int]] = defaultdict(list)
     timestamps: Dict[str, list[int]] = defaultdict(list)
     for send in sends:
-        payloads[edge_key(send)].append(send.payload_size)
-        timestamps[edge_key(send)].append(send.ts_ms)
+        payloads[send.edge_key].append(send.payload_size)
+        timestamps[send.edge_key].append(send.ts_ms)
 
     edge_context: Dict[str, Tuple[str | None, int | None, float | None]] = {}
     config = load_config(args.config_in)

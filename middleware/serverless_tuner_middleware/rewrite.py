@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import re
+from dataclasses import replace
 from typing import Dict, Mapping, Tuple
 
 from . import constants
@@ -43,7 +43,11 @@ def _model_predict(
     mechanism: str, region_pair: str, payload_size_bytes: int, rate_rps: float, quantile: str = "p50"
 ) -> float | None:
     return REGRESSION_MODEL.predict(
-        mechanism=mechanism, region_pair=region_pair, quantile=quantile, payload_bytes=payload_size_bytes, rate_rps=rate_rps
+        mechanism=mechanism,
+        region_pair=region_pair,
+        quantile=quantile,
+        payload_bytes=payload_size_bytes,
+        rate_rps=rate_rps,
     )
 
 
@@ -90,7 +94,7 @@ def rewrite_config_for_critical_path(
     *,
     edge_stats: Mapping[Tuple[str, str], StatSummary],
     node_stats: Mapping[str, StatSummary] | None = None,
-    edge_context: Mapping[str, Tuple[str, int, float]] | None = None,
+    edge_context: Mapping[str, Tuple[str | None, int | None, float | None]] | None = None,
 ) -> WorkflowConfig:
     # TODO: incorporate cost-aware scores (latency + \$) once pricing signals are available.
     dag = build_dag(config)
@@ -137,7 +141,13 @@ def rewrite_config_for_critical_path(
                 edge, current_mech, edge_stats, region_pair=region, payload_size_bytes=size_bytes, rate_rps=rate_rps
             )
             if current_cost is None:
-                current_cost = _weight_for_edge(edge, edge_stats, region_pair=region, payload_size_bytes=size_bytes, rate_rps=rate_rps)
+                current_cost = _weight_for_edge(
+                    edge,
+                    edge_stats,
+                    region_pair=region,
+                    payload_size_bytes=size_bytes,
+                    rate_rps=rate_rps,
+                )
 
             # Identify the fastest available mechanism for this edge.
             http_cost = _mechanism_cost_or_model(

@@ -16,7 +16,10 @@ fi
 # Install local packages (no network needed)
 python -m pip install $PIP_FLAGS -e invoker -e middleware >/dev/null
 
-echo "Running ruff..."
+echo "Running ruff (auto-fix safe rules, including import sort)..."
+ruff --config invoker/pyproject.toml check --fix invoker/chained_serverless_invoker
+ruff --config middleware/pyproject.toml check --fix middleware/serverless_tuner_middleware
+# Re-run to surface any remaining issues after auto-fix
 ruff --config invoker/pyproject.toml check invoker/chained_serverless_invoker
 ruff --config middleware/pyproject.toml check middleware/serverless_tuner_middleware
 
