@@ -5,6 +5,7 @@ from statistics import mean
 from typing import Dict, Iterable, List, Tuple
 
 from .logs import RecvEvent, SendEvent
+from .utils import percentile
 
 
 @dataclass(frozen=True)
@@ -38,15 +39,8 @@ class StatSummary:
 
 
 def _percentile(values: List[float], pct: float) -> float:
-    if not values:
-        return 0.0
-
-    sorted_vals = sorted(values)
-    k = (pct / 100) * (len(sorted_vals) - 1)
-    lower = int(k)
-    upper = min(lower + 1, len(sorted_vals) - 1)
-    weight = k - lower
-    return sorted_vals[lower] * (1 - weight) + sorted_vals[upper] * weight
+    """Backwards-compatible wrapper around utils.percentile."""
+    return percentile(values, pct)
 
 
 def _summarize(values: List[float]) -> StatSummary:

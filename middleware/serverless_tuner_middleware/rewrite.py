@@ -10,6 +10,7 @@ from .critical_path import build_dag, edge_key
 from .dag.graph import WorkflowDag
 from .model import REGRESSION_MODEL
 from .stats import EdgeSample, NodeSample, StatSummary
+from .utils import percentile
 
 
 def _mechanism_cost(edge_key_str: str, mechanism: str, stats: Mapping[Tuple[str, str], StatSummary]) -> float | None:
@@ -489,24 +490,12 @@ def _select_sync_path(
     candidates_out = [(nodes, share, cost) for nodes, share, cost, _ in scored]
     return chosen[0], candidates_out
 
-
-def _calc_percentile(values: List[float], pct: float) -> float:
-    if not values:
-        return 0.0
-    vals = sorted(values)
-    k = (pct / 100.0) * (len(vals) - 1)
-    lower = int(k)
-    upper = min(lower + 1, len(vals) - 1)
-    weight = k - lower
-    return vals[lower] * (1 - weight) + vals[upper] * weight
-
-
 def _percentile_stats(
     edge_samples: Iterable[EdgeSample] | None,
     node_samples: Iterable[NodeSample] | None,
     fallback_edge_stats: Mapping[Tuple[str, str], StatSummary],
     fallback_node_stats: Mapping[str, StatSummary] | None,
-    percentile: float,
+    target_pct: float,
 ) -> Tuple[Dict[Tuple[str, str], StatSummary], Dict[str, StatSummary]]:
     edge_stats_pct: Dict[Tuple[str, str], StatSummary] = {}
     node_stats_pct: Dict[str, StatSummary] = {}
@@ -516,7 +505,7 @@ def _percentile_stats(
         for s in edge_samples:
             edge_values.setdefault((s.edge_key, s.mechanism), []).append(s.transport_ms)
         for key, vals in edge_values.items():
-            v = _calc_percentile(vals, percentile)
+            v = percentile(vals, target_pct)
             edge_stats_pct[key] = StatSummary(count=len(vals), p50=v, p90=v, mean=v)
 
     if node_samples is not None:
@@ -524,7 +513,7 @@ def _percentile_stats(
         for ns in node_samples:
             node_values.setdefault(ns.fn_name, []).append(ns.runtime_ms)
         for fn, vals in node_values.items():
-            v = _calc_percentile(vals, percentile)
+            v = percentile(vals, target_pct)
             node_stats_pct[fn] = StatSummary(count=len(vals), p50=v, p90=v, mean=v)
 
     # Fill missing with fallback summaries (use p50 field even though it may be a different percentile)
