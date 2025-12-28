@@ -29,6 +29,18 @@ def main() -> None:
         default="critical-path",
         help="Rewrite strategy: critical-path greedy (default) or fastest per edge using model predictions.",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print detailed selection, path, and flip information.",
+    )
+    parser.add_argument(
+        "--percentile",
+        type=float,
+        default=50.0,
+        help="Percentile to optimize (e.g., 50, 75, 90, 99). Applies to observed stats and model quantile.",
+    )
 
     args = parser.parse_args()
 
@@ -70,10 +82,11 @@ def main() -> None:
             rate_rps = ctx[2] if ctx else None
 
             preds = {}
+            quant = f"p{int(args.percentile)}"
             if region and size_bytes is not None and rate_rps is not None:
                 for mech in ("http", "pubsub"):
                     preds[mech] = REGRESSION_MODEL.predict(
-                        mech, region, "p50", payload_bytes=size_bytes, rate_rps=rate_rps
+                        mech, region, quant, payload_bytes=size_bytes, rate_rps=rate_rps
                     )
 
             if preds and any(v is not None for v in preds.values()):
@@ -96,7 +109,11 @@ def main() -> None:
             config,
             edge_stats=edge_stats,
             node_stats=node_stats,
+            edge_samples=edge_samples,
+            node_samples=node_samples,
             edge_context=edge_context,
+            verbose=args.verbose,
+            percentile=args.percentile,
         )
     dump_config(rewritten, args.config_out)
 
