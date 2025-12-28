@@ -4,8 +4,9 @@ from typing import List, Optional
 
 @dataclass
 class EdgeConfig:
-    to: str
-    strategy: str  # "http" | "pubsub" | "dynamic"
+    from_fn: Optional[str] = None  # optional source node for disambiguating parallel edges
+    to: str = ""
+    strategy: str = "dynamic"  # "http" | "pubsub" | "dynamic"
     endpoint: Optional[str] = None
     topic: Optional[str] = None
     edge_id: Optional[str] = None  # optional static DAG edge id

@@ -179,6 +179,163 @@ def test_invoke_edge_dynamic_picks_pubsub_for_small_payload(mock_pubsub_client, 
     assert inv["mechanism"] == "pubsub"
 
 
+def test_invoke_edge_prefers_matching_from_fn(mock_pubsub_client, mock_token_fetcher, caplog):
+    """When multiple edges share a target, pick the one whose source matches the current fn."""
+    caplog.set_level(logging.INFO, logger="chained_serverless_invoker.client")
+
+    invoker = DynamicInvoker(mock_pubsub_client, mock_token_fetcher)
+
+    edges = [
+        EdgeConfig(
+            from_fn="profanity",
+            to="censor",
+            strategy="http",
+            endpoint="https://censor",
+            edge_id="profanity->censor",
+        ),
+        EdgeConfig(
+            from_fn="encoding",
+            to="censor",
+            strategy="http",
+            endpoint="https://censor",
+            edge_id="encoding->censor",
+        ),
+    ]
+    meta = InvokerMetadata(fn_name="encoding", run_id="run-edge-select", taint="t", edges=edges)
+    payload: dict[str, object] = {}
+
+    with patch("chained_serverless_invoker.invokers.http_invoker.requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+
+        fut = invoker.invoke_edge(meta, target_fn="censor", payload=payload)
+        fut.result()
+
+    mock_post.assert_called_once()
+
+    send_records = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
+    assert send_records
+    inv = json.loads(send_records[0].message.split(" ", 1)[1])
+    assert inv["edge_id"] == "encoding->censor"
+    assert inv["from_fn"] == "encoding"
+
+
+def test_invoke_edge_prefers_edge_id_prefix_when_from_fn_missing(mock_pubsub_client, mock_token_fetcher, caplog):
+    """If from_fn is absent, fall back to edge_id prefix to choose the right edge."""
+    caplog.set_level(logging.INFO, logger="chained_serverless_invoker.client")
+
+    invoker = DynamicInvoker(mock_pubsub_client, mock_token_fetcher)
+
+    edges = [
+        EdgeConfig(
+            to="censor",
+            strategy="http",
+            endpoint="https://censor",
+            edge_id="profanity:get_input_0_1:2->censor:sync:",
+        ),
+        EdgeConfig(
+            to="censor",
+            strategy="http",
+            endpoint="https://censor",
+            edge_id="encoding:text_2_speech_1_0:3->censor:sync:",
+        ),
+    ]
+
+    meta = InvokerMetadata(fn_name="encoding", run_id="run-edge-id-prefix", taint="t", edges=edges)
+    payload: dict[str, object] = {}
+
+    with patch("chained_serverless_invoker.invokers.http_invoker.requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+
+        fut = invoker.invoke_edge(meta, target_fn="censor", payload=payload)
+        fut.result()
+
+    mock_post.assert_called_once()
+
+    send_records = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
+    assert send_records
+    inv = json.loads(send_records[0].message.split(" ", 1)[1])
+    assert inv["edge_id"] == "encoding:text_2_speech_1_0:3->censor:sync:"
+    assert inv["from_fn"] == "encoding"
+
+
+def test_invoke_edge_critical_paths_choose_correct_edges(mock_pubsub_client, mock_token_fetcher, caplog):
+    """With the text->encoding and profanity->censor paths, each sender should pick its own edge."""
+    caplog.set_level(logging.INFO, logger="chained_serverless_invoker.client")
+
+    edges = [
+        EdgeConfig(
+            from_fn="get_input",
+            to="text_2_speech",
+            strategy="http",
+            endpoint="https://text",
+            edge_id="get_input:entry_point:0->text_2_speech:get_input_0_0:1",
+        ),
+        EdgeConfig(
+            from_fn="get_input",
+            to="profanity",
+            strategy="http",
+            endpoint="https://profanity",
+            edge_id="get_input:entry_point:0->profanity:get_input_0_1:2",
+        ),
+        EdgeConfig(
+            from_fn="text_2_speech",
+            to="encoding",
+            strategy="http",
+            endpoint="https://encoding",
+            edge_id="text_2_speech:get_input_0_0:1->encoding:text_2_speech_1_0:3",
+        ),
+        EdgeConfig(
+            from_fn="profanity",
+            to="censor",
+            strategy="http",
+            endpoint="https://censor",
+            edge_id="profanity:get_input_0_1:2->censor:sync:",
+        ),
+        EdgeConfig(
+            from_fn="encoding",
+            to="censor",
+            strategy="http",
+            endpoint="https://censor",
+            edge_id="encoding:text_2_speech_1_0:3->censor:sync:",
+        ),
+    ]
+
+    # Encoding should choose the encoding->censor edge
+    meta_enc = InvokerMetadata(fn_name="encoding", run_id="run-critical", taint="t1", edges=edges)
+    payload_enc: dict[str, object] = {}
+
+    with patch("chained_serverless_invoker.invokers.http_invoker.requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+        fut = DynamicInvoker(mock_pubsub_client, mock_token_fetcher).invoke_edge(
+            meta_enc, target_fn="censor", payload=payload_enc
+        )
+        fut.result()
+
+    send_records = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
+    assert send_records
+    inv = json.loads(send_records[-1].message.split(" ", 1)[1])
+    assert inv["from_fn"] == "encoding"
+    assert inv["edge_id"] == "encoding:text_2_speech_1_0:3->censor:sync:"
+
+    # Profanity should choose the profanity->censor edge
+    caplog.clear()
+    meta_prof = InvokerMetadata(fn_name="profanity", run_id="run-critical", taint="t2", edges=edges)
+    payload_prof: dict[str, object] = {}
+
+    with patch("chained_serverless_invoker.invokers.http_invoker.requests.post") as mock_post:
+        mock_post.return_value.status_code = 200
+        fut = DynamicInvoker(mock_pubsub_client, mock_token_fetcher).invoke_edge(
+            meta_prof, target_fn="censor", payload=payload_prof
+        )
+        fut.result()
+
+    send_records = [r for r in caplog.records if r.message.startswith("invoker_edge_send")]
+    assert send_records
+    inv = json.loads(send_records[-1].message.split(" ", 1)[1])
+    assert inv["from_fn"] == "profanity"
+    assert inv["edge_id"] == "profanity:get_input_0_1:2->censor:sync:"
+
+
 class DummyRequest:
     def __init__(self, body: bytes):
         self._body = body

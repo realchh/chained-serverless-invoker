@@ -5,6 +5,7 @@ description = "Invoker for chained serverless applications in Google Cloud Run t
 license = "Apache-2.0"
 authors = ["Naufal Wibawa <naufal.rayhanwibawa@gmail.com>"]
 readme = "README.md"
+packages = [{ include = "serverless_tuner_middleware" }]
 
 [tool.poetry.dependencies]
 python = "^3.12"
@@ -70,6 +71,7 @@ format = "serverless_tuner_middleware.scripts:format_code"
 lint = "serverless_tuner_middleware.scripts:lint"
 typecheck = "serverless_tuner_middleware.scripts:check_types"
 check = "serverless_tuner_middleware.scripts:check_all"
+csi-middleware = "serverless_tuner_middleware.cli:main"
 
 [build-system]
 requires = ["poetry-core"]

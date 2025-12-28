@@ -178,16 +178,40 @@ the HTTP or Pub/Sub invocation.
 
 ### Middleware
 
-Separately, a middleware (e.g., a log processor) collects send/recv logs
+Separately, a middleware (a log processor) collects send/recv logs
 from Cloud Logging / Stackdriver.
 
 - It groups them by `run_id`, joins `send/recv` on `(run_id, taint)`,
 and builds a per-edge latency model.
-- Based on this model, it can rewrite a config file (or Caribou-compatible
-deployment plan) to:
+- Based on this model, it can rewrite a config file to:
   - prefer HTTP on some edges,
   - prefer Pub/Sub on others, 
   - or change workflow structure in a future iteration.
+
+### Middleware rewrite heuristics
+
+The default rewrite mode (`critical-path`) uses a greedy loop over the current critical path. Heuristics applied:
+
+- **Gain floor:** flip only if the gain clears `GAIN_THRESHOLD_MS` (default 1 ms). Dynamic edges can flip with zero observed gain to make the strategy explicit.
+- **Path selection:** prefer flagged sync edges; otherwise choose the sync edge(s) in the top run-share band (max share within `SYNC_RUN_SHARE_TOLERANCE`, default 10%) computed with `SYNC_BOTTLENECK_RUN_SHARE_THRESHOLD` (default 20%). Among those paths, break ties by end-to-end cost (edge transports + node runtimes) using percentile-aware weights.
+- **Percentile-aware costs:** edge/node weights come from a selected percentile (CLI `--percentile`, default 50). Observations are used first; otherwise the regression model predicts that percentile for each mechanism.
+- **Flip scope and cap:** only flip edges on the chosen path; stop when no edge clears the gain floor or when `MAX_EDGE_FLIPS_PER_RUN` (default 10) is reached. Path is recomputed after each flip.
+- **Fallback:** any remaining `dynamic` strategies normalize to HTTP after optimization.
+
+Constants live in `middleware/serverless_tuner_middleware/constants.py`; the rewrite loop resides in `middleware/serverless_tuner_middleware/rewrite.py` and the CLI flag is exposed via `csi-middleware --percentile`.
+
+### Regression latency model
+
+Unified form per quantile `q`:
+
+lat_q = c_floor_q + a_q / (k_q + rate_rps) + d_rate_q * rate_rps + b_size_q * payload_bytes
+
+- `q` is the target quantile; default when unspecified is median (p50).
+- `c_floor_q` (>= 0): irreducible floor — half-RTT propagation, fixed proxy/server work, per-hop overhead.
+- `a_q` (>= 0) and `k_q` (>= 0): control the 1/(k+rate) term that captures queueing/throughput effects (Pub/Sub benefits more here).
+- `d_rate_q` (signed): linear rate slope; HTTP can slope slightly up, Pub/Sub can benefit from the reciprocal term while also allowing a linear tweak.
+- `b_size_q` (>= 0): payload-size slope in bytes.
+- Inputs: `rate_rps` is observed sends per second for the edge; `payload_bytes` is mean payload size for the edge.
 
 ## Non-goals / Limitations
 
