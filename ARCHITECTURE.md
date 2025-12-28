@@ -190,16 +190,15 @@ and builds a per-edge latency model.
 
 ### Middleware rewrite heuristics
 
-The default rewrite mode (`critical-path`) uses greedy flips on the current critical path.
-Heuristics applied:
+The default rewrite mode (`critical-path`) uses a greedy loop over the current critical path. Heuristics applied:
 
-- **Gain floor:** only flip an edge if the p50 gain exceeds `GAIN_THRESHOLD_MS`.
-- **Path selection:** pick the longest end-to-end path (edge transports using each edge’s chosen mechanism, plus node runtimes); verbose mode logs all paths ranked by this cost.
-- **Flip scope and cap:** only flip edges on the chosen path; stop when no edge clears the gain floor or when `MAX_EDGE_FLIPS_PER_RUN` (default 10) is reached.
-- **Sync bottleneck reporting:** per-run bottleneck frequency on sync edges is computed with a single threshold `SYNC_BOTTLENECK_RUN_SHARE_THRESHOLD` (default 20%).
-- **Fallback:** dynamic strategies normalize to HTTP after optimization.
+- **Gain floor:** flip only if the gain clears `GAIN_THRESHOLD_MS` (default 1 ms). Dynamic edges can flip with zero observed gain to make the strategy explicit.
+- **Path selection:** prefer flagged sync edges; otherwise choose the sync edge(s) in the top run-share band (max share within `SYNC_RUN_SHARE_TOLERANCE`, default 10%) computed with `SYNC_BOTTLENECK_RUN_SHARE_THRESHOLD` (default 20%). Among those paths, break ties by end-to-end cost (edge transports + node runtimes) using percentile-aware weights.
+- **Percentile-aware costs:** edge/node weights come from a selected percentile (CLI `--percentile`, default 50). Observations are used first; otherwise the regression model predicts that percentile for each mechanism.
+- **Flip scope and cap:** only flip edges on the chosen path; stop when no edge clears the gain floor or when `MAX_EDGE_FLIPS_PER_RUN` (default 10) is reached. Path is recomputed after each flip.
+- **Fallback:** any remaining `dynamic` strategies normalize to HTTP after optimization.
 
-Constants live in `middleware/serverless_tuner_middleware/constants.py`.
+Constants live in `middleware/serverless_tuner_middleware/constants.py`; the rewrite loop resides in `middleware/serverless_tuner_middleware/rewrite.py` and the CLI flag is exposed via `csi-middleware --percentile`.
 
 ### Regression latency model
 

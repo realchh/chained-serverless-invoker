@@ -49,14 +49,15 @@ cd ../middleware && poetry install --no-interaction --no-root
 1) **Instrument your functions** with `DynamicInvoker` and `bootstrap_from_request` so send/recv logs include the `invoker` block (see example below).
 2) **Run your workflow** and collect logs (e.g., export Cloud Logging to NDJSON). The middleware expects `invoker_edge_send` and `invoker_edge_recv` entries with the `invoker` payload.
 3) **Summarize benchmarks (optional)**: use `python middleware/serverless_tuner_middleware/csv_summary.py --help` to see options for deriving percentile baselines and plots from the CSVs in `middleware/serverless_tuner_middleware/csv/`.
-4) **Rewrite the config** using the CLI:
+4) **Rewrite the config** using the CLI (sync bottleneck–aware):
    ```bash
    csi-middleware \
      --logs /path/to/logs.ndjson \
      --config-in /path/to/workflow_config.json \
-     --config-out /path/to/new_config.json
+     --config-out /path/to/new_config.json \
+     --percentile 90   # optional; defaults to 50
    ```
-   This parses logs, computes per-edge/node latency stats, finds the current critical path, and chooses faster mechanisms on that path.
+   This parses logs, computes per-edge/node latency stats at the chosen percentile, selects a critical path by the top sync run-share band (tiebreak by end-to-end cost), and chooses faster mechanisms on that path. Sync run-share uses `SYNC_BOTTLENECK_RUN_SHARE_THRESHOLD` (default 20%) and a tolerance band `SYNC_RUN_SHARE_TOLERANCE` (default 10%).
 5) **Deploy** using the rewritten config (e.g., feed it back to your orchestrator).
 
 Example config (`workflow_config.json`):
